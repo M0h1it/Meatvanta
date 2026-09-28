@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchCategories, fetchProducts } from "../../shop/api/shopApi";
 import { productImage } from "../../../lib/images";
+import BannerSlot from "../../banners/components/BannerSlot";
+import { useRecipes } from "../../recipes/useRecipes";
+import { useMediaQuery } from "../../../hooks/useMediaQuery";
+import RecipeCard from "../../recipes/components/RecipeCard";
+import ProductBadges from "../../../components/product/ProductBadges";
+import PriceLine from "../../../components/product/PriceLine";
 
 const TRUST_STRIP = [
   { icon: "eco", title: "Fresh & Hygienic", text: "Pure, clean and safe" },
@@ -18,14 +24,14 @@ const CATEGORY_BANNERS = {
   chicken: {
     title: "Chicken",
     subtitle: "Fresh & Juicy",
-    desktopImg: "/category-chicken-desktop.jpg",
-    mobileImg: "/category-chicken-mobile.jpg",
+    desktopImg: "/category-chicken-desktop.webp",
+    mobileImg: "/category-chicken-mobile.webp",
   },
   mutton: {
     title: "Mutton",
     subtitle: "Tender & Flavorful",
-    desktopImg: "/category-mutton-desktop.jpg",
-    mobileImg: "/category-mutton-mobile.jpg",
+    desktopImg: "/category-mutton-desktop.webp",
+    mobileImg: "/category-mutton-mobile.webp",
   },
 };
 
@@ -44,6 +50,9 @@ function lowestPrice(product) {
 export default function HomePage() {
   const [categories, setCategories] = useState([]);
   const [bestSellers, setBestSellers] = useState([]);
+  const { recipes } = useRecipes();
+  // sm breakpoint: only the category picture that is showing gets downloaded.
+  const isSmUp = useMediaQuery("(min-width: 640px)");
 
   useEffect(() => {
     fetchCategories().then(setCategories).catch(() => setCategories([]));
@@ -56,16 +65,24 @@ export default function HomePage() {
 
   return (
     <div className="overflow-hidden">
+      {/* OFFERS - top slider. Renders nothing when no offer is live. */}
+      <BannerSlot placement="home_top" className="pt-4 md:pt-6" eager label="Offers" />
+
       {/* HERO - background photo only (no text baked in), so all copy below
           is real, editable JSX text positioned over the blank area the
           photo leaves for it. Desktop and mobile use separate crops, each
           locked to its exact aspect ratio so the text sits in the right
           spot at any screen width. */}
       <section className="relative bg-surface">
-        {/* Desktop / tablet */}
+        {/* Desktop / tablet. Both versions are loading="lazy": the browser then
+            only downloads the one that is actually visible (a hidden image
+            with normal loading still downloads - phones used to fetch the
+            desktop photo too). */}
         <div className="hidden md:block relative w-full aspect-[1944/809] overflow-hidden">
           <img
-            src="/hero-desktop.jpg"
+            src="/hero-desktop.webp"
+            loading="lazy"
+            decoding="async"
             alt="Premium mutton and chicken cuts on a wooden board, Halal certified"
             className="absolute inset-0 w-full h-full object-cover"
           />
@@ -101,7 +118,9 @@ export default function HomePage() {
         {/* Mobile */}
         <div className="md:hidden relative w-full aspect-[1024/1536] overflow-hidden">
           <img
-            src="/hero-mobile.jpg"
+            src="/hero-mobile.webp"
+            loading="lazy"
+            decoding="async"
             alt="Premium mutton and chicken cuts on a wooden board, Halal certified"
             className="absolute inset-0 w-full h-full object-cover"
           />
@@ -196,7 +215,9 @@ export default function HomePage() {
                     layered on the image itself rather than a caption below it. */}
                 <div className="hidden sm:block relative rounded-lg overflow-hidden aspect-[1983/793]">
                   <img
-                    src={banner.desktopImg}
+                    src={isSmUp ? banner.desktopImg : undefined}
+            loading="lazy"
+            decoding="async"
                     alt={`${banner.title} — ${banner.subtitle}`}
                     className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                   />
@@ -226,7 +247,9 @@ export default function HomePage() {
                     to fit inside that without spilling past the image. */}
                 <div className="sm:hidden relative rounded-lg overflow-hidden aspect-[1024/1536]">
                   <img
-                    src={banner.mobileImg}
+                    src={isSmUp ? undefined : banner.mobileImg}
+            loading="lazy"
+            decoding="async"
                     alt={`${banner.title} — ${banner.subtitle}`}
                     className="absolute inset-0 w-full h-full object-cover"
                   />
@@ -250,6 +273,9 @@ export default function HomePage() {
           })}
         </div>
       </section>
+
+      {/* OFFERS - after categories */}
+      <BannerSlot placement="home_middle" className="pb-14 md:pb-16" label="Offers" />
 
       {/* WHY CHOOSE MEATVANTA */}
       <section className="bg-white border-y border-hairline">
@@ -283,6 +309,9 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* OFFERS - above best sellers */}
+      <BannerSlot placement="home_bottom" className="pt-14 md:pt-16" label="Offers" />
+
       {/* FEATURED PRODUCTS */}
       {bestSellers.length > 0 && (
         <section className="page-x py-14 md:py-section">
@@ -302,13 +331,15 @@ export default function HomePage() {
                     alt={`${product.name} — ${product.category?.name} at Meat Vanta`}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
+                  <ProductBadges product={product} className="absolute top-3 left-3 right-3" />
                 </Link>
                 <div className="p-4">
                   <Link to={`/product/${product.id}`}>
-                    <h3 className="font-semibold text-ink text-sm mb-3 hover:text-brand-dark transition-colors">
+                    <h3 className="font-semibold text-ink text-sm hover:text-brand-dark transition-colors">
                       {product.name}
                     </h3>
                   </Link>
+                  <PriceLine product={product} className="mt-0.5 mb-3" />
                   <Link
                     to={`/product/${product.id}`}
                     className="flex items-center justify-center gap-1.5 w-full bg-brand text-white text-sm font-bold py-2 rounded-full hover:bg-brand-dark transition-colors"
@@ -318,6 +349,28 @@ export default function HomePage() {
                   </Link>
                 </div>
               </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* RECIPES - only when at least one is published */}
+      {recipes.length > 0 && (
+        <section className="page-x pb-14 md:pb-section">
+          <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
+            <div>
+              <div className="flex items-center gap-3 text-accent text-xs font-bold uppercase tracking-[0.2em] mb-2">
+                <span className="w-8 h-px bg-accent" /> Recipes
+              </div>
+              <h2 className="font-display text-headline-lg text-brand">Cook It Right</h2>
+            </div>
+            <Link to="/recipes" className="text-sm font-semibold text-brand underline">
+              All recipes
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {recipes.slice(0, 3).map((r) => (
+              <RecipeCard key={r.slug} recipe={r} />
             ))}
           </div>
         </section>

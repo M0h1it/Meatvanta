@@ -13,4 +13,17 @@ const loginRateLimiter = rateLimit({
   },
 });
 
-module.exports = { loginRateLimiter };
+// Coupon checks: generous for real shoppers, but stops scripts guessing codes.
+const couponRateLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many coupon attempts. Please wait a few minutes and try again.",
+    errors: null,
+  },
+});
+
+module.exports = { loginRateLimiter, couponRateLimiter };

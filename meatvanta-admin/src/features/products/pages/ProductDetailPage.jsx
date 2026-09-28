@@ -8,8 +8,6 @@ import {
   updateVariant,
   deleteVariant,
   toggleVariantStock,
-  uploadProductImage,
-  removeProductImage,
   addOptionGroup,
   updateOptionGroup,
   deleteOptionGroup,
@@ -21,6 +19,9 @@ import { fetchCategories } from "../../categories/api/categoriesApi";
 import { usePermission } from "../../../hooks/usePermission";
 import { showSuccess, showError, showConfirm } from "../../../lib/sweetAlert";
 import Toggle from "../../../components/common/Toggle";
+import ProductImageGallery from "../components/ProductImageGallery";
+import ProductTagsEditor from "../components/ProductTagsEditor";
+import ComboContentsSection from "../components/ComboContentsSection";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -32,7 +33,7 @@ export default function ProductDetailPage() {
   const [error, setError] = useState(null);
 
   // Inline "add" rows
-  const [newVariant, setNewVariant] = useState({ label: "", price: "" });
+  const [newVariant, setNewVariant] = useState({ label: "", price: "", mrp: "" });
   const [newGroup, setNewGroup] = useState({ name: "", isRequired: false, allowMultiple: false });
   const [newOptionByGroup, setNewOptionByGroup] = useState({});
 
@@ -91,23 +92,15 @@ export default function ProductDetailPage() {
     "Product updated."
   );
 
-  async function handleImageChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      await uploadProductImage(product.id, file);
-      await load();
-      showSuccess("Image uploaded.");
-    } catch (err) {
-      showError(err.response?.data?.message || "Image upload failed.");
-    }
-  }
-
   async function handleAddVariant() {
     if (!newVariant.label || !newVariant.price) return;
     try {
-      await addVariant(product.id, { label: newVariant.label, price: Number(newVariant.price) });
-      setNewVariant({ label: "", price: "" });
+      await addVariant(product.id, {
+        label: newVariant.label,
+        price: Number(newVariant.price),
+        mrp: newVariant.mrp === "" ? null : Number(newVariant.mrp),
+      });
+      setNewVariant({ label: "", price: "", mrp: "" });
       await load();
       showSuccess("Variant added.");
     } catch (err) {
@@ -209,7 +202,14 @@ export default function ProductDetailPage() {
 
       <div className="flex flex-wrap items-start justify-between gap-3 mb-lg">
         <div>
-          <h1 className="font-headline-md text-headline-md text-on-surface">{product.name}</h1>
+          <h1 className="font-headline-md text-headline-md text-on-surface">
+            {product.name}
+            {product.isCombo && (
+              <span className="ml-2 align-middle text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-surface">
+                Combo
+              </span>
+            )}
+          </h1>
           <p className="text-sm text-on-surface-variant mt-0.5">
             {product.category?.name} · {product.variants.length} variants ({inStockVariants} available)
             {!product.isActive && " · deactivated"}
@@ -273,10 +273,17 @@ export default function ProductDetailPage() {
             <p className="text-xs text-on-surface-variant mt-1">Changes save when you click away.</p>
           </section>
 
+          {product.isCombo && <ComboContentsSection product={product} canUpdate={canUpdate} onSaved={load} />}
+
           {/* Variants */}
           <section className="bg-surface-container-lowest rounded-lg border border-outline-variant p-md">
-            <h2 className="font-headline-sm text-headline-sm text-on-surface mb-1">Variants &amp; Pricing</h2>
-            <p className="text-xs text-on-surface-variant mb-3">How much the customer buys — 250 GM, 1 KG, 4 Pieces.</p>
+            <h2 className="font-headline-sm text-headline-sm text-on-surface mb-1">
+              {product.isCombo ? "Combo price" : "Variants & Pricing"}
+            </h2>
+            <p className="text-xs text-on-surface-variant mb-3">
+              How much the customer buys — 250 GM, 1 KG, 4 Pieces. MRP is optional: when it is higher than the price,
+              the shop shows it struck through with "% OFF". Use only a real MRP.
+            </p>
 
             <div className="rounded border border-outline-variant overflow-hidden mb-3">
               <table className="w-full text-sm">
@@ -284,6 +291,7 @@ export default function ProductDetailPage() {
                   <tr>
                     <th className="text-left px-3 py-2 font-label-bold text-label-bold">Label</th>
                     <th className="text-left px-3 py-2 font-label-bold text-label-bold">Price</th>
+                    <th className="text-left px-3 py-2 font-label-bold text-label-bold">MRP</th>
                     <th className="text-left px-3 py-2 font-label-bold text-label-bold">Available</th>
                     <th className="px-3 py-2"></th>
                   </tr>
@@ -316,6 +324,31 @@ export default function ProductDetailPage() {
                             className="w-full rounded border border-outline-variant pl-5 pr-2 py-1.5 disabled:opacity-60"
                           />
                         </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="relative w-28">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-xs">₹</span>
+                          <input
+                            // key resets the box to the saved value after every reload
+                            key={`${v.id}-${v.mrp ?? ""}`}
+                            type="number"
+                            placeholder="—"
+                            aria-label={`MRP for ${v.label}`}
+                            defaultValue={v.mrp ?? ""}
+                            disabled={!canUpdate}
+                            onBlur={(e) => {
+                              const next = e.target.value === "" ? null : Number(e.target.value);
+                              const current = v.mrp === null || v.mrp === undefined ? null : Number(v.mrp);
+                              if (next !== current) run(() => updateVariant(v.id, { mrp: next }))();
+                            }}
+                            className="w-full rounded border border-outline-variant pl-5 pr-2 py-1.5 disabled:opacity-60"
+                          />
+                        </div>
+                        {v.mrp && Number(v.mrp) > Number(v.price) && (
+                          <span className="text-[11px] text-on-secondary-fixed-variant font-semibold">
+                            {Math.round(((Number(v.mrp) - Number(v.price)) / Number(v.mrp)) * 100)}% OFF shown
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         {canToggleStock && (
@@ -356,6 +389,13 @@ export default function ProductDetailPage() {
                   onChange={(e) => setNewVariant({ ...newVariant, price: e.target.value })}
                   className="w-28 rounded border border-outline-variant px-2 py-1.5 text-sm"
                 />
+                <input
+                  type="number"
+                  placeholder="MRP (optional)"
+                  value={newVariant.mrp}
+                  onChange={(e) => setNewVariant({ ...newVariant, mrp: e.target.value })}
+                  className="w-32 rounded border border-outline-variant px-2 py-1.5 text-sm"
+                />
                 <button
                   onClick={handleAddVariant}
                   className="flex items-center gap-1 text-sm px-3 py-1.5 rounded border border-outline-variant hover:bg-surface-container-low whitespace-nowrap"
@@ -367,7 +407,8 @@ export default function ProductDetailPage() {
             )}
           </section>
 
-          {/* Option groups */}
+          {/* Option groups - combos come as listed, so they have none */}
+          {product.isCombo ? null : (
           <section className="bg-surface-container-lowest rounded-lg border border-outline-variant p-md">
             <h2 className="font-headline-sm text-headline-sm text-on-surface mb-1">Options</h2>
             <p className="text-xs text-on-surface-variant mb-3">
@@ -546,42 +587,18 @@ export default function ProductDetailPage() {
               </div>
             )}
           </section>
+          )}
         </div>
 
-        {/* Right column: image */}
+        {/* Right column: image gallery */}
         <div>
           <section className="bg-surface-container-lowest rounded-lg border border-outline-variant p-md">
-            <h2 className="font-headline-sm text-headline-sm text-on-surface mb-3">Image</h2>
-            <div className="aspect-square rounded-lg border-2 border-dashed border-outline-variant bg-surface-container-low flex items-center justify-center overflow-hidden mb-3">
-              {product.imageUrl ? (
-                <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="material-symbols-outlined text-4xl text-outline">image</span>
-              )}
-            </div>
-
-            {canUpdate && (
-              <div className="flex gap-2">
-                <label className="flex-1 text-center text-sm px-3 py-2 rounded border border-outline-variant text-on-surface-variant hover:bg-surface-container-low cursor-pointer">
-                  {product.imageUrl ? "Change" : "Upload"}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    onChange={handleImageChange}
-                    className="hidden"
-                  />
-                </label>
-                {product.imageUrl && (
-                  <button
-                    onClick={() => run(() => removeProductImage(product.id), "Image removed.")()}
-                    className="text-sm px-3 py-2 rounded border border-outline-variant text-error hover:bg-error-container"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            )}
+            <h2 className="font-headline-sm text-headline-sm text-on-surface mb-3">Images</h2>
+            <ProductImageGallery product={product} canUpdate={canUpdate} onChange={setProduct} />
           </section>
+          <div className="mt-md">
+            <ProductTagsEditor product={product} canUpdate={canUpdate} onChange={load} />
+          </div>
         </div>
       </div>
     </div>

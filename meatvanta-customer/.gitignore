@@ -2,3 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+
+# deploy.sh builds here first, then swaps it in; keeps the previous build for rollback
+dist-new/
+dist-previous/

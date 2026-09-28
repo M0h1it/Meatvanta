@@ -6,14 +6,9 @@ import { useCustomerAuth } from "../../../hooks/useCustomerAuth";
 import AddressFormModal from "../../account/components/AddressFormModal";
 import { formatWindow, formatDate, formatRupees } from "../../../lib/format";
 import { HERO_IMAGE } from "../../../lib/images";
-
-// Shown for visual completeness alongside the real payment options below.
-// None of these are wired up individually - they're all handled inside the
-// Razorpay widget itself once "Pay Online" is chosen.
-const DISABLED_PAYMENT_METHODS = [
-  { key: "netbanking", icon: "account_balance", title: "Net Banking", text: "All major banks supported" },
-  { key: "wallet", icon: "account_balance_wallet", title: "Wallets", text: "Paytm, PhonePe, Amazon Pay, etc." },
-];
+import CouponBox from "../../coupons/components/CouponBox";
+import { useCouponPreview } from "../../coupons/useCouponPreview";
+import { loadRazorpay } from "../../../lib/externalScripts";
 
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
@@ -37,6 +32,18 @@ export default function CheckoutPage() {
     paymentMethod: "",
     notes: "",
   });
+
+  // Per-customer coupon rules go by phone number: the one typed here, else the account's.
+  const phoneDigits = form.customerPhone.replace(/\D/g, "");
+  const coupon = useCouponPreview({
+    customerPhone: phoneDigits.length >= 10 ? form.customerPhone : customer?.phone,
+  });
+
+  // Razorpay is loaded here instead of on every page. Started when the page
+  // opens so the payment window is ready by the time "Place Order" is pressed.
+  useEffect(() => {
+    loadRazorpay().catch(() => {}); // a failure is handled again on payment
+  }, []);
 
   useEffect(() => {
     fetchDeliveryAvailability()
@@ -89,8 +96,11 @@ export default function CheckoutPage() {
   }
 
   const isFlatCharge = availability?.deliveryChargeMode === "flat";
-  const deliveryCharge = isFlatCharge ? Number(availability.flatDeliveryCharge) : 0;
-  const grandTotal = totalPrice + deliveryCharge;
+  const freeDelivery = Boolean(coupon.preview?.freeDelivery);
+  const deliveryCharge = isFlatCharge && !freeDelivery ? Number(availability.flatDeliveryCharge) : 0;
+  const discount = coupon.preview?.discount || 0;
+  // Display only - the server prices the order itself and the payment amount comes from it.
+  const grandTotal = totalPrice + deliveryCharge - discount;
   const noDatesAvailable = availability && availability.dates.length === 0;
 
   function setField(field, value) {
@@ -119,11 +129,15 @@ export default function CheckoutPage() {
    * price/a discount, or payment fails, nothing was ever created - the shop
    * never sees it.
    */
-  function openRazorpayCheckout({ razorpayOrderId, razorpayKeyId, amount }) {
+  async function openRazorpayCheckout({ razorpayOrderId, razorpayKeyId, amount }) {
     if (!window.Razorpay) {
-      setGeneralError("Payment couldn't load. Please check your connection and try again.");
-      setIsSubmitting(false);
-      return;
+      try {
+        await loadRazorpay(); // normally already loaded when the page opened
+      } catch {
+        setGeneralError("Payment couldn't load. Please check your connection and try again.");
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     const rzp = new window.Razorpay({
@@ -186,6 +200,7 @@ export default function CheckoutPage() {
         deliveryDate: form.deliveryDate,
         paymentMethod: form.paymentMethod,
         notes: form.notes || undefined,
+        couponCode: coupon.couponCode || undefined,
         items: items.map((i) => ({
           productVariantId: i.variantId,
           quantity: i.quantity,
@@ -205,6 +220,9 @@ export default function CheckoutPage() {
     } catch (err) {
       const response = err.response?.data;
       if (response?.errors) setErrors(response.errors);
+      // The coupon stopped working between applying it and ordering (used up,
+      // expired, already used by this number) - drop it so the next try works.
+      if (coupon.couponCode && response?.message?.includes(coupon.couponCode)) coupon.remove();
       setGeneralError(response?.message || "Something went wrong placing your order.");
       setIsSubmitting(false);
     }
@@ -459,27 +477,6 @@ export default function CheckoutPage() {
               </label>
             )}
 
-            {/* Visual-only, disabled - covered by the "Pay Online" option above,
-                shown just so the payment section doesn't look sparse. */}
-            {DISABLED_PAYMENT_METHODS.map((m) => (
-              <div
-                key={m.key}
-                title="Available via Pay Online"
-                className="flex items-start gap-3 p-3 rounded-sm border border-ink/10 bg-surface-alt cursor-not-allowed opacity-60"
-              >
-                <input type="radio" disabled className="mt-1" />
-                <span className="flex items-center gap-2 flex-1">
-                  <span className="material-symbols-outlined text-ink/40">{m.icon}</span>
-                  <span>
-                    <span className="font-semibold text-ink/50 text-sm block">{m.title}</span>
-                    <span className="text-xs text-ink/40">{m.text}</span>
-                  </span>
-                </span>
-                <span className="ml-auto text-[10px] font-bold uppercase text-ink/40 bg-white px-2 py-0.5 rounded-full self-center shrink-0">
-                  Via Pay Online
-                </span>
-              </div>
-            ))}
           </div>
 
           <div className="mt-4 flex items-start gap-2 bg-brand/5 border border-brand/15 rounded-sm p-3">
@@ -515,6 +512,7 @@ export default function CheckoutPage() {
                 {item.optionLabels?.length > 0 && (
                   <span className="block text-xs text-brand-dark">{item.optionLabels.join(", ")}</span>
                 )}
+                {item.includes && <span className="block text-xs text-ink/50">Includes: {item.includes}</span>}
               </span>
               <span className="font-semibold text-ink">
                 {formatRupees((item.price + (item.optionsTotal || 0)) * item.quantity)}
@@ -527,9 +525,19 @@ export default function CheckoutPage() {
               <span className="text-ink/70">Subtotal</span>
               <span className="font-semibold text-ink">{formatRupees(totalPrice)}</span>
             </div>
+            {discount > 0 && (
+              <div className="flex justify-between text-sm text-success">
+                <span>
+                  Coupon <span className="font-mono font-semibold">{coupon.preview.code}</span>
+                </span>
+                <span className="font-semibold">−{formatRupees(discount)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-sm">
               <span className="text-ink/70">Delivery</span>
-              {isFlatCharge ? (
+              {freeDelivery ? (
+                <span className="font-semibold text-success">Free (coupon)</span>
+              ) : isFlatCharge ? (
                 <span className="font-semibold text-ink">{formatRupees(deliveryCharge)}</span>
               ) : (
                 <span className="text-ink/50 text-xs text-right max-w-[60%]">
@@ -537,6 +545,10 @@ export default function CheckoutPage() {
                 </span>
               )}
             </div>
+          </div>
+
+          <div className="border-t border-hairline mt-3 pt-3">
+            <CouponBox coupon={coupon} />
           </div>
 
           <div className="border-t border-hairline mt-3 pt-3 flex justify-between items-center">

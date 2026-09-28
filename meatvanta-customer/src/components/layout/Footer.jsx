@@ -22,13 +22,17 @@ export default function Footer() {
           positioned behind the content below, not a separate block above
           it - the text sits directly on top of this image. */}
       <img
-        src="/footer-wave-desktop.png"
+        src="/footer-wave-desktop.webp"
+        loading="lazy"
+        decoding="async"
         alt=""
         aria-hidden="true"
         className="hidden md:block absolute inset-x-0 top-0 w-full h-auto pointer-events-none select-none"
       />
       <img
-        src="/footer-wave-mobile.png"
+        src="/footer-wave-mobile.webp"
+        loading="lazy"
+        decoding="async"
         alt=""
         aria-hidden="true"
         className="md:hidden absolute inset-x-0 top-0 w-full h-auto pointer-events-none select-none"

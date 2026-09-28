@@ -47,12 +47,30 @@ export async function toggleVariantStock(variantId, isInStock) {
   return data.data.variant;
 }
 
-export async function uploadProductImage(productId, file) {
+// ---------- Image gallery ----------
+// The first image (lowest sortOrder) is the cover shown in the shop.
+
+/** Uploads one or more images; they are appended to the end of the gallery. */
+export async function uploadProductImages(productId, files, onProgress) {
   const formData = new FormData();
-  formData.append("image", file);
-  const { data } = await apiClient.post(`/products/${productId}/image`, formData, {
+  Array.from(files).forEach((file) => formData.append("images", file));
+  const { data } = await apiClient.post(`/products/${productId}/images`, formData, {
     headers: { "Content-Type": "multipart/form-data" },
+    onUploadProgress: (event) => {
+      if (onProgress && event.total) onProgress(Math.round((event.loaded / event.total) * 100));
+    },
   });
+  return data.data.product;
+}
+
+/** imageIds = every image id of the product, in the new order. */
+export async function reorderProductImages(productId, imageIds) {
+  const { data } = await apiClient.put(`/products/${productId}/images/order`, { imageIds });
+  return data.data.product;
+}
+
+export async function deleteProductImage(imageId) {
+  const { data } = await apiClient.delete(`/products/images/${imageId}`);
   return data.data.product;
 }
 
@@ -93,7 +111,46 @@ export async function deleteOption(optionId) {
   return data.data;
 }
 
-export async function removeProductImage(productId) {
-  const { data } = await apiClient.delete(`/products/${productId}/image`);
+// ---------- Tags (labels on product cards) ----------
+
+export async function addProductTag(productId, payload) {
+  const { data } = await apiClient.post(`/products/${productId}/tags`, payload);
+  return data.data.tag;
+}
+
+export async function updateProductTag(tagId, payload) {
+  const { data } = await apiClient.put(`/products/tags/${tagId}`, payload);
+  return data.data.tag;
+}
+
+export async function deleteProductTag(tagId) {
+  const { data } = await apiClient.delete(`/products/tags/${tagId}`);
+  return data.data;
+}
+
+// ---------- Automatic "Bestseller" label ----------
+
+/** { settings: { enabled, count, days, label, minUnits }, productIds } */
+export async function fetchBestsellerSettings() {
+  const { data } = await apiClient.get("/products/settings/bestseller");
+  return data.data;
+}
+
+export async function updateBestsellerSettings(payload) {
+  const { data } = await apiClient.put("/products/settings/bestseller", payload);
+  return data.data;
+}
+
+// ---------- Combos ----------
+
+/** { name, categoryId, description, price, mrp, label, items: [{ variantId, quantity }] } */
+export async function createCombo(payload) {
+  const { data } = await apiClient.post("/products/combos", payload);
   return data.data.product;
+}
+
+/** Replaces what's inside. An empty list turns it back into a normal product. */
+export async function setComboItems(productId, items) {
+  const { data } = await apiClient.put(`/products/${productId}/combo-items`, { items });
+  return data.data;
 }

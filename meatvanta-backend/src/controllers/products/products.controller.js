@@ -2,7 +2,8 @@ const validators = require("../../validators/products/products.validator");
 const productsService = require("../../services/products/products.service");
 const { success, failure } = require("../../utils/apiResponse.util");
 const { writeAuditLog } = require("../../utils/auditLogger.util");
-const fs = require("fs");
+const merchService = require("../../services/merch/merch.service");
+const combosService = require("../../services/combos/combos.service");
 
 function handleServiceError(err, next, res) {
   if (err.expose) return failure(res, err.statusCode, err.message);
@@ -188,55 +189,155 @@ async function toggleVariantStock(req, res, next) {
   }
 }
 
-// ---------- Image ----------
+// ---------- Image gallery ----------
 
-async function uploadImage(req, res, next) {
+async function uploadImages(req, res, next) {
   try {
-    if (!req.file) {
-      return failure(res, 422, "No image file received. Field name must be 'image'.");
+    if (!req.files || req.files.length === 0) {
+      return failure(res, 422, "No images received. Field name must be 'images'.");
     }
 
     const productId = Number(req.params.id);
-    let product;
-    try {
-      product = await productsService.setProductImage(productId, req.file);
-    } catch (err) {
-      // Product didn't exist - multer already wrote the file to disk before we
-      // knew that, so clean it up rather than leaving an orphaned file behind.
-      fs.unlink(req.file.path, () => {});
-      throw err;
-    }
+    const product = await productsService.addProductImages(productId, req.files);
 
     await writeAuditLog({
       adminId: req.admin.id,
       action: "products:update",
       entity: "Product",
       entityId: productId,
-      metadata: { imageUpdated: true },
+      metadata: { imagesAdded: req.files.length },
       ipAddress: req.ip,
     });
 
-    return success(res, 200, "Product image uploaded.", { product });
+    const count = req.files.length;
+    return success(res, 201, count === 1 ? "Image uploaded." : `${count} images uploaded.`, { product });
   } catch (err) {
     return handleServiceError(err, next, res);
   }
 }
 
-async function removeImage(req, res, next) {
+async function reorderImages(req, res, next) {
   try {
+    const { imageIds } = req.body || {};
+    const isValidList =
+      Array.isArray(imageIds) &&
+      imageIds.length > 0 &&
+      imageIds.every((id) => Number.isInteger(id) && id > 0) &&
+      new Set(imageIds).size === imageIds.length;
+    if (!isValidList) {
+      return failure(res, 422, "imageIds must be a list of unique image ids.");
+    }
+
     const productId = Number(req.params.id);
-    const product = await productsService.removeProductImage(productId);
+    const product = await productsService.reorderProductImages(productId, imageIds);
 
     await writeAuditLog({
       adminId: req.admin.id,
       action: "products:update",
       entity: "Product",
       entityId: productId,
-      metadata: { imageRemoved: true },
+      metadata: { imagesReordered: imageIds },
       ipAddress: req.ip,
     });
 
-    return success(res, 200, "Product image removed.", { product });
+    return success(res, 200, "Image order saved.", { product });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+async function deleteImage(req, res, next) {
+  try {
+    const imageId = Number(req.params.imageId);
+    const product = await productsService.deleteProductImage(imageId);
+
+    await writeAuditLog({
+      adminId: req.admin.id,
+      action: "products:update",
+      entity: "Product",
+      entityId: product.id,
+      metadata: { imageRemoved: imageId },
+      ipAddress: req.ip,
+    });
+
+    return success(res, 200, "Image removed.", { product });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+// ---------- Tags ----------
+
+// ---------- Combos ----------
+
+async function createCombo(req, res, next) {
+  try {
+    const product = await combosService.createCombo(req.body || {});
+    await writeAuditLog({ adminId: req.admin.id, action: "products:create", entity: "Product", entityId: product.id, metadata: { combo: req.body }, ipAddress: req.ip });
+    return success(res, 201, "Combo created.", { product });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+async function setComboItems(req, res, next) {
+  try {
+    const productId = Number(req.params.id);
+    const result = await combosService.setComboItems(productId, (req.body || {}).items);
+    await writeAuditLog({ adminId: req.admin.id, action: "products:update", entity: "Product", entityId: productId, metadata: { comboItems: (req.body || {}).items }, ipAddress: req.ip });
+    return success(res, 200, result.isCombo ? "Combo items saved." : "Combo items removed.", result);
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+async function addTag(req, res, next) {
+  try {
+    const productId = Number(req.params.id);
+    const tag = await merchService.addTag(productId, req.body || {});
+    await writeAuditLog({ adminId: req.admin.id, action: "products:update", entity: "ProductTag", entityId: tag.id, metadata: { productId, tag: req.body }, ipAddress: req.ip });
+    return success(res, 201, "Tag added.", { tag });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+async function updateTag(req, res, next) {
+  try {
+    const tag = await merchService.updateTag(Number(req.params.tagId), req.body || {});
+    await writeAuditLog({ adminId: req.admin.id, action: "products:update", entity: "ProductTag", entityId: tag.id, metadata: req.body, ipAddress: req.ip });
+    return success(res, 200, "Tag saved.", { tag });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+async function deleteTag(req, res, next) {
+  try {
+    const tag = await merchService.deleteTag(Number(req.params.tagId));
+    await writeAuditLog({ adminId: req.admin.id, action: "products:update", entity: "ProductTag", entityId: tag.id, metadata: { deleted: tag.label }, ipAddress: req.ip });
+    return success(res, 200, "Tag removed.", { deletedId: tag.id });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+async function getBestsellerSettings(req, res, next) {
+  try {
+    const settings = await merchService.getBestsellerSettings();
+    const ids = settings.enabled ? [...(await merchService.getBestsellerIds(settings))] : [];
+    return success(res, 200, "Settings fetched.", { settings, productIds: ids });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function updateBestsellerSettings(req, res, next) {
+  try {
+    const settings = await merchService.updateBestsellerSettings(req.body || {});
+    const ids = settings.enabled ? [...(await merchService.getBestsellerIds(settings))] : [];
+    await writeAuditLog({ adminId: req.admin.id, action: "products:update", entity: "SiteSetting", metadata: { autoBestseller: settings }, ipAddress: req.ip });
+    return success(res, 200, "Settings saved.", { settings, productIds: ids });
   } catch (err) {
     return handleServiceError(err, next, res);
   }
@@ -416,8 +517,16 @@ module.exports = {
   updateVariant,
   deleteVariant,
   toggleVariantStock,
-  uploadImage,
-  removeImage,
+  uploadImages,
+  reorderImages,
+  deleteImage,
+  createCombo,
+  setComboItems,
+  addTag,
+  updateTag,
+  deleteTag,
+  getBestsellerSettings,
+  updateBestsellerSettings,
   toggleStock,
   addOptionGroup,
   updateOptionGroup,

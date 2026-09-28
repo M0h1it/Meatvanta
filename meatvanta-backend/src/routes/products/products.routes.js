@@ -4,29 +4,47 @@ const router = express.Router();
 const productsController = require("../../controllers/products/products.controller");
 const { requireAuth } = require("../../middlewares/auth.middleware");
 const { requirePermission } = require("../../middlewares/permission.middleware");
-const { uploadProductImage } = require("../../middlewares/upload.middleware");
+const { uploadProductImages } = require("../../middlewares/upload.middleware");
 
 // Products
 router.post("/", requireAuth, requirePermission("products:create"), productsController.create);
+// Combos: create in one step, or change a product's contents.
+router.post("/combos", requireAuth, requirePermission("products:create"), productsController.createCombo);
+router.put("/:id/combo-items", requireAuth, requirePermission("products:update"), productsController.setComboItems);
 router.get("/", requireAuth, requirePermission("products:view"), productsController.list);
 router.get("/:id", requireAuth, requirePermission("products:view"), productsController.getOne);
 router.put("/:id", requireAuth, requirePermission("products:update"), productsController.update);
 router.delete("/:id", requireAuth, requirePermission("products:delete"), productsController.remove);
 
-// Product image
+// Product image gallery. The first image (lowest sortOrder) is the cover.
 router.post(
-  "/:id/image",
+  "/:id/images",
   requireAuth,
   requirePermission("products:update"),
-  uploadProductImage,
-  productsController.uploadImage
+  uploadProductImages,
+  productsController.uploadImages
+);
+router.put(
+  "/:id/images/order",
+  requireAuth,
+  requirePermission("products:update"),
+  productsController.reorderImages
 );
 router.delete(
-  "/:id/image",
+  "/images/:imageId",
   requireAuth,
   requirePermission("products:update"),
-  productsController.removeImage
+  productsController.deleteImage
 );
+
+// Tags shown on product cards ("Eid Special", deals with a countdown).
+router.post("/:id/tags", requireAuth, requirePermission("products:update"), productsController.addTag);
+router.put("/tags/:tagId", requireAuth, requirePermission("products:update"), productsController.updateTag);
+router.delete("/tags/:tagId", requireAuth, requirePermission("products:update"), productsController.deleteTag);
+
+// Automatic "Bestseller" label - on/off, how many products, how many days back.
+router.get("/settings/bestseller", requireAuth, requirePermission("products:view"), productsController.getBestsellerSettings);
+router.put("/settings/bestseller", requireAuth, requirePermission("products:update"), productsController.updateBestsellerSettings);
 
 // Product-level availability - hides the whole item from the shop for a day.
 router.patch(

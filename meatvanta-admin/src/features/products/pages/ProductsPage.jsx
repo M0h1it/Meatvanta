@@ -10,8 +10,6 @@ import {
   updateVariant,
   deleteVariant,
   toggleVariantStock,
-  uploadProductImage,
-  removeProductImage,
 } from "../api/productsApi";
 import { fetchCategories } from "../../categories/api/categoriesApi";
 import { usePermission } from "../../../hooks/usePermission";
@@ -20,8 +18,12 @@ import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import Modal from "../../../components/common/Modal";
 import { showSuccess, showError, showConfirm } from "../../../lib/sweetAlert";
 import Toggle from "../../../components/common/Toggle";
+import ProductImageGallery from "../components/ProductImageGallery";
+import BestsellerSettingsModal from "../components/BestsellerSettingsModal";
+import ComboCreateModal from "../components/ComboCreateModal";
+import { rowsFromComboItems } from "../lib/combo";
 
-const EMPTY_FORM = { id: null, name: "", categoryId: "", description: "", variants: [], imageUrl: null };
+const EMPTY_FORM = { id: null, name: "", categoryId: "", description: "", variants: [], images: [] };
 const EMPTY_VARIANT_ROW = { label: "", price: "" };
 
 export default function ProductsPage() {
@@ -34,6 +36,8 @@ export default function ProductsPage() {
   const [error, setError] = useState(null);
   const [form, setForm] = useState(null);
   const [newVariant, setNewVariant] = useState(EMPTY_VARIANT_ROW);
+  const [showBestseller, setShowBestseller] = useState(false);
+  const [showNewCombo, setShowNewCombo] = useState(false);
 
   const { hasPermission } = usePermission();
   const canCreate = hasPermission("products:create");
@@ -79,7 +83,7 @@ export default function ProductsPage() {
         categoryId: product.categoryId,
         description: product.description || "",
         variants: product.variants,
-        imageUrl: product.imageUrl,
+        images: product.images || [],
       });
     } catch (err) {
       showError(err.response?.data?.message || "Failed to load product.");
@@ -111,7 +115,7 @@ export default function ProductsPage() {
         });
         await loadAll();
         openEditForm(created.id);
-        showSuccess("Product created. Now you can upload its image.");
+        showSuccess("Product created. Now you can add its images.");
       }
       setError(null);
     } catch (err) {
@@ -194,29 +198,10 @@ export default function ProductsPage() {
     }
   }
 
-  async function handleImageChange(e) {
-    const file = e.target.files?.[0];
-    if (!file || !form.id) return;
-    try {
-      const updated = await uploadProductImage(form.id, file);
-      setForm({ ...form, imageUrl: updated.imageUrl });
-      loadAll();
-      showSuccess("Image uploaded.");
-    } catch (err) {
-      showError(err.response?.data?.message || "Image upload failed.");
-    }
-  }
-
-  async function handleRemoveImage() {
-    if (!form.id) return;
-    try {
-      await removeProductImage(form.id);
-      setForm({ ...form, imageUrl: null });
-      loadAll();
-      showSuccess("Image removed.");
-    } catch (err) {
-      showError(err.response?.data?.message || "Failed to remove image.");
-    }
+  /** Gallery changed inside the modal: refresh its images and the product grid behind it. */
+  function handleGalleryChange(updated) {
+    setForm((current) => (current ? { ...current, images: updated.images || [] } : current));
+    loadAll();
   }
 
   return (
@@ -229,6 +214,16 @@ export default function ProductsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {canUpdate && (
+            <button
+              type="button"
+              onClick={() => setShowBestseller(true)}
+              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded border border-outline-variant text-on-surface-variant hover:bg-surface-container-low"
+            >
+              <span className="material-symbols-outlined text-lg">workspace_premium</span>
+              Bestseller
+            </button>
+          )}
           <div className="relative">
             <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-lg text-on-surface-variant">
               search
@@ -264,6 +259,16 @@ export default function ProductsPage() {
           </select>
           {canCreate && (
             <button
+              type="button"
+              onClick={() => setShowNewCombo(true)}
+              className="flex items-center gap-1 text-sm px-3 py-2 rounded border border-primary text-primary hover:bg-primary-fixed"
+            >
+              <span className="material-symbols-outlined text-lg">redeem</span>
+              New combo
+            </button>
+          )}
+          {canCreate && (
+            <button
               onClick={openCreateForm}
               className="flex items-center gap-1 bg-primary-container text-on-primary text-sm px-4 py-2 rounded hover:opacity-90 transition-opacity"
             >
@@ -288,36 +293,18 @@ export default function ProductsPage() {
           <form onSubmit={handleSaveProduct}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-lg mb-lg">
               <div>
-                <label className="block font-label-bold text-label-bold text-on-surface mb-2">Product Image</label>
-                <div className="aspect-square rounded-lg border-2 border-dashed border-outline-variant bg-surface-container-low flex flex-col items-center justify-center overflow-hidden relative">
-                  {form.imageUrl ? (
-                    <img src={form.imageUrl} alt={form.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-4xl text-outline mb-2">add_photo_alternate</span>
-                      <p className="text-sm text-on-surface-variant">Click or drag image to upload</p>
-                    </>
-                  )}
-                </div>
-                {form.id && (
-                  <div className="flex gap-2 mt-2">
-                    <label className="flex-1 text-center text-sm px-3 py-2 rounded border border-outline-variant text-on-surface-variant hover:bg-surface-container-low cursor-pointer">
-                      {form.imageUrl ? "Change Image" : "Upload Image"}
-                      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleImageChange} className="hidden" />
-                    </label>
-                    {form.imageUrl && (
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        className="text-sm px-3 py-2 rounded border border-outline-variant text-error hover:bg-error-container"
-                      >
-                        Remove
-                      </button>
-                    )}
+                <label className="block font-label-bold text-label-bold text-on-surface mb-2">Product Images</label>
+                {form.id ? (
+                  <ProductImageGallery
+                    product={{ id: form.id, name: form.name, images: form.images }}
+                    canUpdate={canUpdate}
+                    onChange={handleGalleryChange}
+                  />
+                ) : (
+                  <div className="aspect-square rounded-lg border-2 border-dashed border-outline-variant bg-surface-container-low flex flex-col items-center justify-center text-center px-4">
+                    <span className="material-symbols-outlined text-4xl text-outline mb-2">add_photo_alternate</span>
+                    <p className="text-sm text-on-surface-variant">Save the product first, then add its images.</p>
                   </div>
-                )}
-                {!form.id && (
-                  <p className="text-xs text-on-surface-variant mt-2">Save the product first, then upload its image.</p>
                 )}
               </div>
 
@@ -494,6 +481,8 @@ export default function ProductsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-md">
           {products.map((p) => {
             const inStockCount = p.variants.filter((v) => v.isInStock).length;
+            const comboRows = p.isCombo ? rowsFromComboItems(p.comboItems) : [];
+            const comboProblem = comboRows.some((r) => r.problem);
             const anyOutOfStock = inStockCount < p.variants.length;
             return (
               <div
@@ -507,6 +496,12 @@ export default function ProductsPage() {
                     <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
                   ) : (
                     <span className="material-symbols-outlined text-4xl text-outline-variant">image</span>
+                  )}
+                  {p.images?.length > 1 && (
+                    <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5">
+                      <span className="material-symbols-outlined text-sm">photo_library</span>
+                      {p.images.length}
+                    </span>
                   )}
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {canUpdate && (
@@ -537,6 +532,12 @@ export default function ProductsPage() {
                   >
                     {p.name}
                   </Link>
+                  {p.isCombo && (
+                    <p className={`text-xs mt-1 ${comboProblem ? "text-error font-semibold" : "text-on-surface-variant"}`}>
+                      Combo · {comboRows.length} item{comboRows.length === 1 ? "" : "s"}
+                      {comboProblem ? " · an item is unavailable (hidden)" : ""}
+                    </p>
+                  )}
                   <p className={`text-xs mt-1 ${anyOutOfStock ? "text-error" : "text-on-surface-variant"}`}>
                     {inStockCount}/{p.variants.length} variants in stock
                   </p>
@@ -557,6 +558,8 @@ export default function ProductsPage() {
           })}
         </div>
       )}
+      <ComboCreateModal isOpen={showNewCombo} categories={categories} onClose={() => { setShowNewCombo(false); loadAll(); }} />
+      <BestsellerSettingsModal isOpen={showBestseller} products={products} onClose={() => setShowBestseller(false)} />
     </div>
   );
 }

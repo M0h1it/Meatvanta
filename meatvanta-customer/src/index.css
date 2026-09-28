@@ -23,3 +23,19 @@
   vertical-align: middle;
   line-height: 1;
 }
+
+/* Soft fade used by offers (announcement text change, pop-up). */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-[fadeIn"] {
+    animation: none !important;
+  }
+}

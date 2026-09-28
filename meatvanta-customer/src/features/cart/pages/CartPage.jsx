@@ -1,14 +1,18 @@
-import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../../../hooks/useCart";
 import { useCustomerAuth } from "../../../hooks/useCustomerAuth";
 import { productImage, HERO_IMAGE } from "../../../lib/images";
+import BannerSlot from "../../banners/components/BannerSlot";
+import CouponBox from "../../coupons/components/CouponBox";
+import { useCouponPreview } from "../../coupons/useCouponPreview";
 
 export default function CartPage() {
   const { items, updateQuantity, removeItem, totalPrice } = useCart();
-  const { isAuthenticated, openLogin } = useCustomerAuth();
+  const { isAuthenticated, openLogin, customer } = useCustomerAuth();
   const navigate = useNavigate();
-  const [promoCode, setPromoCode] = useState("");
+  // The saving shown here comes from the server; checkout checks it again.
+  const coupon = useCouponPreview({ customerPhone: customer?.phone });
+  const discount = coupon.preview?.discount || 0;
 
   // Sign-in is asked for here rather than at "Place Order" - better to know
   // who the customer is before they fill in a whole checkout form.
@@ -57,6 +61,9 @@ export default function CartPage() {
       </section>
 
       <div className="page-x max-w-6xl mx-auto py-8 md:py-12">
+      {/* Offers - nothing renders when none are live */}
+      <BannerSlot placement="cart_top" inset="inside" className="mb-6" label="Offers" />
+
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start">
         {/* Items */}
         <div className="space-y-3">
@@ -87,6 +94,7 @@ export default function CartPage() {
                 {item.optionLabels?.length > 0 && (
                   <p className="text-xs text-brand-dark font-medium">{item.optionLabels.join(", ")}</p>
                 )}
+                {item.includes && <p className="text-xs text-ink/60 line-clamp-2">Includes: {item.includes}</p>}
                 <span className="inline-block mt-1 text-[10px] font-bold uppercase tracking-wide bg-success/10 text-success px-2 py-0.5 rounded-full">
                   Fresh & Halal
                 </span>
@@ -140,13 +148,25 @@ export default function CartPage() {
             <span>Subtotal ({items.length} {items.length === 1 ? "item" : "items"})</span>
             <span className="font-semibold text-ink">₹{totalPrice.toFixed(0)}</span>
           </div>
+          {discount > 0 && (
+            <div className="flex justify-between text-sm text-success mb-1.5">
+              <span>
+                Coupon <span className="font-mono font-semibold">{coupon.preview.code}</span>
+              </span>
+              <span className="font-semibold">−₹{discount.toFixed(0)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm text-ink/70 mb-3">
             <span>Delivery Charges</span>
-            <span className="text-ink/50">Calculated at checkout</span>
+            {coupon.preview?.freeDelivery ? (
+              <span className="font-semibold text-success">Free</span>
+            ) : (
+              <span className="text-ink/50">Calculated at checkout</span>
+            )}
           </div>
           <div className="border-t border-hairline pt-3 flex justify-between items-center mb-4">
             <span className="font-bold text-ink">Total Amount</span>
-            <span className="text-2xl font-bold text-brand">₹{totalPrice.toFixed(0)}</span>
+            <span className="text-2xl font-bold text-brand">₹{(totalPrice - discount).toFixed(0)}</span>
           </div>
 
           <button
@@ -157,29 +177,8 @@ export default function CartPage() {
             {isAuthenticated ? "Proceed to Checkout" : "Sign In & Checkout"}
           </button>
 
-          {/* Promo codes aren't built yet - shown for visual completeness, disabled until available */}
           <div className="mt-5 pt-4 border-t border-hairline">
-            <p className="flex items-center gap-1.5 text-sm font-semibold text-ink mb-2">
-              <span className="material-symbols-outlined text-base">sell</span>
-              Have a Promo Code?
-            </p>
-            <div className="flex gap-2">
-              <input
-                disabled
-                title="Coming soon"
-                placeholder="Enter code here"
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value)}
-                className="flex-1 rounded-sm border border-ink/15 px-3 py-2 text-sm bg-surface-alt text-ink/40 cursor-not-allowed"
-              />
-              <button
-                disabled
-                title="Coming soon"
-                className="px-4 rounded-sm border border-accent/40 text-accent/50 text-sm font-bold cursor-not-allowed"
-              >
-                Apply
-              </button>
-            </div>
+            <CouponBox coupon={coupon} />
           </div>
 
           <div className="mt-4 flex items-start gap-2 bg-brand/5 border border-brand/15 rounded-sm p-3">

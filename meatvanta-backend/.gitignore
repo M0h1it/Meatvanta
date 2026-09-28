@@ -3,9 +3,15 @@ node_modules/
 .env.local
 dist/
 *.log
-uploads/products/*
-!uploads/products/.gitkeep
+# Uploaded images are runtime data, not code. Production keeps them outside
+# the repo (UPLOADS_DIR); locally they land in backend/uploads.
+uploads/*
+!uploads/.gitkeep
 
 # Database dumps/backups - these hold real customer data (names, phones,
 # addresses, orders). They must never be committed - keep them off git
 # entirely, store backups somewhere access-controlled instead (e.g. R2/S3).
+*.sql
+!prisma/migrations/**/*.sql
+*.sql.gz
+backups/

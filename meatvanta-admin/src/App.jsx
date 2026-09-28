@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import AdminLayout from "./components/layout/AdminLayout";
@@ -18,6 +19,13 @@ import OrderDetailPage from "./features/orders/pages/OrderDetailPage";
 import ProductDetailPage from "./features/products/pages/ProductDetailPage";
 import CustomersPage from "./features/customers/pages/CustomersPage";
 import CustomerDetailPage from "./features/customers/pages/CustomerDetailPage";
+
+// Loaded on first visit to keep the main bundle small.
+const BannersPage = lazy(() => import("./features/banners/pages/BannersPage"));
+const CouponsPage = lazy(() => import("./features/coupons/pages/CouponsPage"));
+const RecipesPage = lazy(() => import("./features/recipes/pages/RecipesPage"));
+const RecipeEditorPage = lazy(() => import("./features/recipes/pages/RecipeEditorPage"));
+const pageFallback = <p className="text-sm text-on-surface-variant">Loading…</p>;
 
 export default function App() {
   return (
@@ -163,6 +171,58 @@ export default function App() {
           <ProtectedRoute requiredPermission="products:view">
             <AdminLayout>
               <ProductDetailPage />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/coupons"
+        element={
+          <ProtectedRoute requiredPermission="coupons:view">
+            <AdminLayout>
+              <Suspense fallback={pageFallback}>
+                <CouponsPage />
+              </Suspense>
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/recipes"
+        element={
+          <ProtectedRoute requiredPermission="recipes:view">
+            <AdminLayout>
+              <Suspense fallback={pageFallback}>
+                <RecipesPage />
+              </Suspense>
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/recipes/:id"
+        element={
+          <ProtectedRoute requiredPermission="recipes:view">
+            <AdminLayout>
+              <Suspense fallback={pageFallback}>
+                <RecipeEditorPage />
+              </Suspense>
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/banners"
+        element={
+          <ProtectedRoute requiredPermission="banners:view">
+            <AdminLayout>
+              <Suspense fallback={pageFallback}>
+                <BannersPage />
+              </Suspense>
             </AdminLayout>
           </ProtectedRoute>
         }

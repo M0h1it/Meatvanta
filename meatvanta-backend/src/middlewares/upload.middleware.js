@@ -1,49 +1,22 @@
 const multer = require("multer");
-const fs = require("fs");
-const path = require("path");
-const prisma = require("../config/db");
-const { slugify } = require("../utils/slugify.util");
-const { isR2Configured } = require("../config/r2");
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
 
-const UPLOAD_ROOT = path.join(__dirname, "..", "..", "uploads");
+// Raw upload limit. Files are re-encoded by sharp afterwards (see
+// imageProcessor.util.js), so what is actually stored is far smaller.
+const MAX_FILE_SIZE_MB = 10;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+// How many files a single upload request may carry. The per-product total is
+// enforced separately in products.service (MAX_IMAGES_PER_PRODUCT).
+const MAX_FILES_PER_UPLOAD = 6;
 
 /**
- * Two storage modes:
- *  - R2 configured  -> memory, then streamed to object storage. Required on
- *    hosts with an ephemeral disk (Render free wipes it on every deploy).
- *  - otherwise      -> local disk under uploads/<category-slug>/, which keeps
- *    local development working with no cloud account.
+ * Files are kept in memory, not written to disk here: every upload is resized
+ * and converted to WebP first, and only the processed result is saved.
+ * That also means a rejected request (bad product id, over the image limit)
+ * never leaves a stray file behind.
  */
-const memoryStorage = multer.memoryStorage();
-
-const diskStorage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    try {
-      const productId = Number(req.params.id);
-      const product = await prisma.product.findUnique({
-        where: { id: productId },
-        include: { category: true },
-      });
-
-      const folder = product ? product.category.slug : "uncategorized";
-      const dir = path.join(UPLOAD_ROOT, folder);
-      fs.mkdirSync(dir, { recursive: true });
-
-      req._productNameSlug = product ? slugify(product.name) : "product";
-      cb(null, dir);
-    } catch (err) {
-      cb(err);
-    }
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${req._productNameSlug || "product"}-${Date.now()}${ext}`);
-  },
-});
-
 function fileFilter(req, file, cb) {
   if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
     const err = new Error("Only JPG, PNG, or WEBP images are allowed.");
@@ -54,10 +27,42 @@ function fileFilter(req, file, cb) {
   cb(null, true);
 }
 
-const uploadProductImage = multer({
-  storage: isR2Configured ? memoryStorage : diskStorage,
+const uploadProductImages = multer({
+  storage: multer.memoryStorage(),
   fileFilter,
-  limits: { fileSize: MAX_FILE_SIZE_BYTES },
-}).single("image"); // form-data field name must be "image"
+  limits: { fileSize: MAX_FILE_SIZE_BYTES, files: MAX_FILES_PER_UPLOAD },
+}).array("images", MAX_FILES_PER_UPLOAD); // form-data field name must be "images"
 
-module.exports = { uploadProductImage, UPLOAD_ROOT };
+// ---------- Banners ----------
+// Up to three files per banner: the main (desktop) media, an optional phone
+// version and an optional cover image for videos. Type and size are checked
+// per file in bannerMedia.util.js (videos may be larger than images).
+const BANNER_UPLOAD_LIMIT_MB = 15;
+const bannerUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: BANNER_UPLOAD_LIMIT_MB * 1024 * 1024, files: 3 },
+}).fields([
+  { name: "desktop", maxCount: 1 },
+  { name: "mobile", maxCount: 1 },
+  { name: "poster", maxCount: 1 },
+]);
+
+/** Same as bannerUpload, but turns multer's errors into clear 422 messages for this form. */
+function uploadBannerMedia(req, res, next) {
+  bannerUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      const message =
+        err.code === "LIMIT_FILE_SIZE"
+          ? `Each file must be ${BANNER_UPLOAD_LIMIT_MB}MB or smaller.`
+          : 'Upload files using the "desktop", "mobile" and "poster" fields.';
+      const wrapped = new Error(message);
+      wrapped.statusCode = 422;
+      wrapped.expose = true;
+      return next(wrapped);
+    }
+    return next(err);
+  });
+}
+
+module.exports = { uploadProductImages, uploadBannerMedia, MAX_FILE_SIZE_MB, MAX_FILES_PER_UPLOAD };

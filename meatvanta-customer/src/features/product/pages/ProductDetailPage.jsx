@@ -6,6 +6,14 @@ import { useCart } from "../../../hooks/useCart";
 import { useCustomerAuth } from "../../../hooks/useCustomerAuth";
 import { useDocumentMeta } from "../../../hooks/useDocumentMeta";
 import { productImage } from "../../../lib/images";
+import ProductGallery from "../components/ProductGallery";
+import BannerSlot from "../../banners/components/BannerSlot";
+import ProductBadges from "../../../components/product/ProductBadges";
+import PriceLine from "../../../components/product/PriceLine";
+import CouponHint from "../../../components/product/CouponHint";
+import { variantDiscountPct } from "../../../lib/offers";
+import ComboContents from "../components/ComboContents";
+import RecipeCard from "../../recipes/components/RecipeCard";
 
 const QUALITY_POINTS = [
   { icon: "verified", text: "100% Halal Certified" },
@@ -145,14 +153,12 @@ export default function ProductDetailPage() {
         </nav>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
-          {/* Image */}
-          <div className="rounded overflow-hidden border border-hairline bg-white">
-            <img
-              src={productImage(product, 1000)}
-              alt={`${product.name} — fresh ${product.category?.name} from Meat Vanta`}
-              className="w-full aspect-square object-cover"
-            />
-          </div>
+          {/* Images */}
+          <ProductGallery
+            images={product.images}
+            fallbackSrc={productImage(product, 1000)}
+            alt={`${product.name} — fresh ${product.category?.name} from Meat Vanta`}
+          />
 
           {/* Details */}
           <div>
@@ -160,11 +166,16 @@ export default function ProductDetailPage() {
               {product.category?.name}
             </p>
             <h1 className="font-display text-headline-lg text-ink mb-3">{product.name}</h1>
+            <ProductBadges product={product} max={10} size="lg" withCountdown className="mb-3" />
 
             <span className="inline-flex items-center gap-1.5 bg-accent-soft/50 border border-accent/30 text-ink text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-full mb-4">
               <span className="material-symbols-outlined text-sm text-accent">verified</span>
               Fresh Today
             </span>
+
+            <CouponHint product={product} className="mb-5" />
+
+            <ComboContents product={product} className="mb-6" />
 
             {product.description && (
               <p className="text-ink/70 leading-relaxed mb-6 pb-6 border-b border-hairline">
@@ -174,7 +185,7 @@ export default function ProductDetailPage() {
 
             {/* Weight */}
             <div className="mb-6">
-              <h2 className="font-display text-lg font-bold text-ink mb-3">Select Weight</h2>
+              <h2 className="font-display text-lg font-bold text-ink mb-3">{product.combo ? "Pack" : "Select Weight"}</h2>
               <div className="flex flex-wrap gap-2.5">
                 {product.variants.map((variant) => {
                   const isSelected = variant.id === selectedVariantId;
@@ -192,7 +203,17 @@ export default function ProductDetailPage() {
                       <span className="block text-xs font-bold uppercase tracking-wide">{variant.label}</span>
                       <span className={`block text-sm font-semibold ${isSelected ? "text-white" : "text-ink/70"}`}>
                         ₹{Number(variant.price)}
+                        {variantDiscountPct(variant) !== null && (
+                          <span className={`ml-1 text-xs font-normal line-through ${isSelected ? "text-white/70" : "text-ink/40"}`}>
+                            ₹{Number(variant.mrp)}
+                          </span>
+                        )}
                       </span>
+                      {variantDiscountPct(variant) !== null && (
+                        <span className={`block text-[10px] font-bold ${isSelected ? "text-white" : "text-success"}`}>
+                          {variantDiscountPct(variant)}% OFF
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -278,6 +299,11 @@ export default function ProductDetailPage() {
             <div className="shrink-0">
               <p className="font-display text-xl md:text-3xl font-bold text-ink">
                 ₹{total.toFixed(0)}
+                {selectedVariant && variantDiscountPct(selectedVariant) !== null && (
+                  <span className="ml-2 font-sans text-sm md:text-base font-normal text-ink/40 line-through">
+                    ₹{((Number(selectedVariant.mrp) + optionsTotal) * quantity).toFixed(0)}
+                  </span>
+                )}
               </p>
               {optionsTotal > 0 && (
                 <p className="text-[10px] md:text-xs text-ink/50">includes ₹{optionsTotal} options</p>
@@ -349,6 +375,22 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
+      {/* Offers - nothing renders when none are live */}
+      <BannerSlot placement="product_page" className="pb-10" label="Offers" />
+
+      {/* Recipes that use this product */}
+      {product.recipes?.length > 0 && (
+        <div className="page-x pb-14">
+          <h2 className="font-display text-headline-md text-ink mb-1">Cook it with a recipe</h2>
+          <p className="text-sm text-ink/60 mb-5">Step by step, with the flame and timings.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {product.recipes.map((r) => (
+              <RecipeCard key={r.slug} recipe={r} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Related */}
       {related.length > 0 && (
         <div className="page-x pb-14">
@@ -364,19 +406,20 @@ export default function ProductDetailPage() {
                   to={`/product/${item.id}`}
                   className="group bg-white rounded border border-hairline overflow-hidden hover:border-brand/40 transition-colors"
                 >
-                  <div className="aspect-square overflow-hidden bg-surface-alt">
+                  <div className="relative aspect-square overflow-hidden bg-surface-alt">
                     <img
                       src={productImage(item)}
                       alt={`${item.name} — ${item.category?.name} from Meat Vanta`}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
+                    <ProductBadges product={item} className="absolute top-3 left-3 right-3" />
                   </div>
                   <div className="p-4">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-ink/50">
                       {item.category?.name}
                     </p>
                     <h3 className="font-display font-bold text-ink leading-snug mt-0.5">{item.name}</h3>
-                    {from !== null && <p className="text-sm text-ink/70 mt-1">from ₹{from}</p>}
+                    {from !== null && <PriceLine product={item} className="mt-1" />}
                   </div>
                 </Link>
               );

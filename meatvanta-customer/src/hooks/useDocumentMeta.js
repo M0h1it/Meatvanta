@@ -58,7 +58,7 @@ export function useDocumentMeta({ title, description, path, image } = {}) {
       : DEFAULT_TITLE;
     const desc = description || DEFAULT_DESCRIPTION;
     const url = path ? `${BASE_URL}${path}` : BASE_URL;
-    const ogImage = image || `${BASE_URL}/og-image.jpg`;
+    const ogImage = image || `${BASE_URL}/og-image.webp`;
 
     document.title = fullTitle;
     setMetaByName("description", desc);
@@ -82,10 +82,10 @@ export function useDocumentMeta({ title, description, path, image } = {}) {
       setMetaByProperty("og:title", "Meat Vanta — Fresh Halal Meat Delivered in Gurugram");
       setMetaByProperty("og:description", DEFAULT_DESCRIPTION);
       setMetaByProperty("og:url", BASE_URL);
-      setMetaByProperty("og:image", `${BASE_URL}/og-image.jpg`);
+      setMetaByProperty("og:image", `${BASE_URL}/og-image.webp`);
       setMetaByName("twitter:title", "Meat Vanta — Fresh Halal Meat Delivered in Gurugram");
       setMetaByName("twitter:description", DEFAULT_DESCRIPTION);
-      setMetaByName("twitter:image", `${BASE_URL}/og-image.jpg`);
+      setMetaByName("twitter:image", `${BASE_URL}/og-image.webp`);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [title, description, path, image]);

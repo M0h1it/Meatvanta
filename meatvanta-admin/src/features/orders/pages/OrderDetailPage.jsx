@@ -298,6 +298,15 @@ export default function OrderDetailPage() {
                             .join(", ")}
                         </span>
                       )}
+                      {item.comboItems?.length > 0 && (
+                        <ul className="mt-1 text-xs text-on-surface-variant list-disc list-inside">
+                          {item.comboItems.map((c, i) => (
+                            <li key={i}>
+                              {c.productName} - {c.variantLabel} × {c.quantity * item.quantity}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </td>
                     <td className="py-2 text-center text-on-surface font-medium">{item.quantity}</td>
                     <td className="py-2 text-right text-on-surface-variant">
@@ -318,7 +327,9 @@ export default function OrderDetailPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-on-surface-variant">Delivery</span>
-                {order.deliveryChargeStatus === "pending" ? (
+                {order.freeDelivery ? (
+                  <span className="text-on-surface">Free (coupon)</span>
+                ) : order.deliveryChargeStatus === "pending" ? (
                   <span className="text-error font-medium">Not set</span>
                 ) : (
                   <span className="text-on-surface">₹{Number(order.deliveryCharge).toFixed(2)}</span>
@@ -326,8 +337,17 @@ export default function OrderDetailPage() {
               </div>
               {Number(order.discount) > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-on-surface-variant">Discount</span>
+                  <span className="text-on-surface-variant">
+                    Discount
+                    {order.couponCode && <span className="ml-1 font-mono text-xs">({order.couponCode})</span>}
+                  </span>
                   <span className="text-on-surface">−₹{Number(order.discount).toFixed(2)}</span>
+                </div>
+              )}
+              {order.couponCode && Number(order.discount) === 0 && (
+                <div className="flex justify-between">
+                  <span className="text-on-surface-variant">Coupon</span>
+                  <span className="font-mono text-xs text-on-surface">{order.couponCode}</span>
                 </div>
               )}
               <div className="flex justify-between pt-2 border-t border-outline-variant">

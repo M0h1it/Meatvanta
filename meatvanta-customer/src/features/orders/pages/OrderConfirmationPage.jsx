@@ -177,6 +177,11 @@ export default function OrderConfirmationPage() {
                   {item.selectedOptions.map((o) => o.optionName).join(", ")}
                 </span>
               )}
+              {item.comboItems?.length > 0 && (
+                <span className="block text-xs text-ink/50">
+                  Includes: {item.comboItems.map((c) => `${c.productName} ${c.variantLabel}${c.quantity > 1 ? ` ×${c.quantity}` : ""}`).join(" + ")}
+                </span>
+              )}
             </span>
             <span className="font-semibold text-ink">{formatRupees(item.lineTotal)}</span>
           </div>
@@ -187,9 +192,19 @@ export default function OrderConfirmationPage() {
             <span className="text-ink/70">Subtotal</span>
             <span className="font-semibold text-ink">{formatRupees(order.subtotal)}</span>
           </div>
+          {Number(order.discount) > 0 && (
+            <div className="flex justify-between text-sm text-success">
+              <span>
+                Coupon{order.couponCode && <span className="font-mono font-semibold"> {order.couponCode}</span>}
+              </span>
+              <span className="font-semibold">−{formatRupees(order.discount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-sm">
             <span className="text-ink/70">Delivery</span>
-            {order.deliveryChargeStatus === "pending" ? (
+            {order.freeDelivery ? (
+              <span className="font-semibold text-success">Free{order.couponCode ? ` (${order.couponCode})` : ""}</span>
+            ) : order.deliveryChargeStatus === "pending" ? (
               <span className="text-ink/50 text-xs">To be confirmed</span>
             ) : (
               <span className="font-semibold text-ink">{formatRupees(order.deliveryCharge)}</span>
@@ -201,7 +216,7 @@ export default function OrderConfirmationPage() {
           <span className="font-bold text-ink">
             Total
             <span className="block text-xs font-normal text-ink/50">
-              {order.paymentMethod === "cod" ? "Pay on delivery" : "Paid via UPI"}
+              {order.paymentMethod === "cod" ? "Pay on delivery" : "Paid online"}
             </span>
           </span>
           <span className="text-2xl font-bold text-ink">{formatRupees(order.total)}</span>

@@ -42,6 +42,18 @@
       "coupons:delete",
       "coupons:view"
     ],
+    "banners": [
+      "banners:view",
+      "banners:create",
+      "banners:update",
+      "banners:delete"
+    ],
+    "recipes": [
+      "recipes:view",
+      "recipes:create",
+      "recipes:update",
+      "recipes:delete"
+    ],
     "reports": [
       "reports:view",
       "reports:export"

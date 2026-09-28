@@ -116,6 +116,13 @@ function validatePublicCreateOrder(body) {
   if (!CUSTOMER_PAYMENT_METHODS.includes(paymentMethod)) {
     errors.paymentMethod = `Please choose a payment method (${CUSTOMER_PAYMENT_METHODS.join(" or ")}).`;
   }
+  // Optional. Only the code is accepted - the discount is always worked out on the server.
+  const { couponCode } = body || {};
+  if (couponCode !== undefined && couponCode !== null && couponCode !== "") {
+    if (typeof couponCode !== "string" || couponCode.trim().length > 30) {
+      errors.couponCode = "That coupon code doesn't look right.";
+    }
+  }
 
   return { isValid: Object.keys(errors).length === 0, errors };
 }

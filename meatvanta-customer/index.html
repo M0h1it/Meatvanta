@@ -97,50 +97,9 @@
   </head>
   <body class="bg-surface">
     <div id="root"></div>
-    <!-- Razorpay's checkout widget - loaded globally so CheckoutPage can open
-         it via window.Razorpay without an extra dynamic-import step. -->
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-
-    <!-- MSG91 OTP Widget - handles sending/matching the OTP entirely on
-         MSG91's side, direct from the browser. exposeMethods:true is what
-         lets LoginSheet.jsx drive it (window.sendOtp/verifyOtp/retryOtp)
-         from our own phone/OTP form instead of MSG91's own popup UI. The
-         widget's own client-side "success" here is never trusted by itself -
-         see customerAuth verifyOtp on the backend, which re-checks the
-         access-token with MSG91 before any session is ever issued.
-         The percent-sign placeholders below are Vite's own index.html env
-         replacement (not import.meta.env, which only works inside a module
-         script) - Vite reads the matching VITE_-prefixed names from .env. -->
-    <script type="text/javascript">
-      var msg91Configuration = {
-        widgetId: "%VITE_MSG91_WIDGET_ID%",
-        tokenAuth: "%VITE_MSG91_TOKEN_AUTH%",
-        exposeMethods: true,
-        success: () => {}, // unused - LoginSheet.jsx passes its own callbacks to sendOtp/verifyOtp
-        failure: () => {},
-      };
-    </script>
-    <script type="text/javascript">
-      (function loadMsg91Widget(urls) {
-        let i = 0;
-        function attempt() {
-          const s = document.createElement("script");
-          s.src = urls[i];
-          s.async = true;
-          s.onload = () => {
-            if (typeof window.initSendOTP === "function") {
-              window.initSendOTP(msg91Configuration);
-            }
-          };
-          s.onerror = () => {
-            i++;
-            if (i < urls.length) attempt();
-          };
-          document.head.appendChild(s);
-        }
-        attempt();
-      })(["https://verify.msg91.com/otp-provider.js", "https://verify.phone91.com/otp-provider.js"]);
-    </script>
+    <!-- Razorpay and the MSG91 OTP widget are no longer loaded here on every
+         page: src/lib/externalScripts.js loads them only when needed
+         (checkout page / login sheet). -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

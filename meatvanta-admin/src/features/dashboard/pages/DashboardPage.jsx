@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../../hooks/useAuth";
 import { fetchDashboardStats, fetchOrders } from "../../orders/api/ordersApi";
 import { usePermission } from "../../../hooks/usePermission";
+
+// Loaded only when the Analytics tab is opened, so the charting libraries
+// don't slow down the everyday "Today" view.
+const AnalyticsView = lazy(() => import("../../analytics/pages/AnalyticsView"));
 
 const STATUS_LABELS = {
   placed: "Placed",
@@ -14,6 +18,65 @@ const STATUS_LABELS = {
 
 export default function DashboardPage() {
   const { admin } = useAuth();
+  const { hasPermission } = usePermission();
+  const canViewAnalytics = hasPermission("reports:view");
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The tab lives in the URL (?tab=analytics) so a refresh or shared link keeps it.
+  const tab = canViewAnalytics && searchParams.get("tab") === "analytics" ? "analytics" : "today";
+
+  function selectTab(next) {
+    setSearchParams(next === "analytics" ? { tab: "analytics" } : {}, { replace: true });
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-lg">
+        <div>
+          <h1 className="font-headline-md text-headline-md text-on-surface">Welcome back, {admin?.name}</h1>
+          <p className="font-body-md text-body-md text-on-surface-variant mt-1">
+            {tab === "today" ? "Here's an overview of your store today." : "Sales, orders and best sellers over time."}
+          </p>
+        </div>
+
+        {canViewAnalytics && (
+          <div role="tablist" aria-label="Dashboard view" className="inline-flex rounded border border-outline-variant overflow-hidden">
+            {[
+              { id: "today", label: "Today", icon: "today" },
+              { id: "analytics", label: "Analytics", icon: "monitoring" },
+            ].map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => selectTab(t.id)}
+                className={`flex items-center gap-1.5 text-sm px-4 py-2 border-l first:border-l-0 border-outline-variant transition-colors ${
+                  tab === t.id
+                    ? "bg-primary-container text-on-primary"
+                    : "bg-surface-container-lowest text-on-surface-variant hover:bg-surface-container-low"
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg leading-none">{t.icon}</span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {tab === "analytics" ? (
+        <Suspense fallback={<p className="text-sm text-on-surface-variant py-lg">Loading analytics…</p>}>
+          <AnalyticsView />
+        </Suspense>
+      ) : (
+        <TodayView />
+      )}
+    </div>
+  );
+}
+
+/** The original dashboard: today's numbers and the latest orders. Unchanged. */
+function TodayView() {
   const { hasPermission } = usePermission();
   const canViewOrders = hasPermission("orders:view");
 
@@ -49,11 +112,6 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="font-headline-md text-headline-md text-on-surface">Welcome back, {admin?.name}</h1>
-      <p className="font-body-md text-body-md text-on-surface-variant mt-1 mb-lg">
-        Here's an overview of your store today.
-      </p>
-
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-md mb-lg">
         {statCards.map((card) => (
           <div key={card.label} className="bg-surface-container-lowest rounded-lg border border-outline-variant p-md">

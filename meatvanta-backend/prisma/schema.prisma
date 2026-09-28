@@ -97,9 +97,11 @@ model Product {
   category      Category         @relation(fields: [categoryId], references: [id])
   name          String           @db.VarChar(150)
   description   String?          @db.Text
+  // Cover image = a mirror of the first ProductImage (lowest sortOrder). Kept
+  // on the product itself so listings, cart and SEO read one field and never
+  // need to join the gallery. Synced by products.service on every image change.
   imageUrl      String?          @map("image_url") @db.VarChar(500)
-  // Relative path under /uploads (e.g. "products/5/1719900000000.jpg") - used
-  // to delete/replace the old file on disk when a new image is uploaded.
+  // Relative path under UPLOADS_DIR (e.g. "chicken/chicken-curry-cut-1719900000000.webp").
   imagePath     String?          @map("image_path") @db.VarChar(500)
   // isActive = exists in the catalogue at all (soft delete).
   // isInStock = available to order today. Separate concepts: the owner pulls an
@@ -107,14 +109,39 @@ model Product {
   isActive      Boolean          @default(true) @map("is_active")
   isInStock     Boolean          @default(true) @map("is_in_stock")
   sortOrder     Int              @default(0) @map("sort_order")
+  // A "pack" made of other products (see ComboItem). A combo that is just its
+  // own product with no contents stays isCombo=false and lives in a combo
+  // category like any other product.
+  isCombo       Boolean          @default(false) @map("is_combo")
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
 
   variants      ProductVariant[]
   optionGroups  ProductOptionGroup[]
+  images        ProductImage[]
+  tags          ProductTag[]
+  comboItems    ComboItem[]
+  recipeIngredients RecipeIngredient[]
 
   @@index([categoryId])
   @@map("products")
+}
+
+// Product gallery. The image with the lowest sortOrder is the cover and is
+// mirrored onto Product.imageUrl / imagePath.
+model ProductImage {
+  id        Int      @id @default(autoincrement())
+  productId Int      @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  // Relative path under UPLOADS_DIR - used to delete the file from disk.
+  // Nullable only for rows backfilled from a product that had a URL but no path.
+  path      String?  @db.VarChar(500)
+  url       String   @db.VarChar(500)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([productId])
+  @@map("product_images")
 }
 
 model ProductVariant {
@@ -125,12 +152,17 @@ model ProductVariant {
   // items ("4 Pieces") without forcing every product into a fixed weight enum.
   label     String   @db.VarChar(50)
   price     Decimal  @db.Decimal(10, 2)
+  // Optional "MRP" shown struck through next to the price, with "X% OFF".
+  // Only shown when it is higher than the price. Display only - the customer
+  // always pays `price`.
+  mrp       Decimal? @db.Decimal(10, 2)
   isInStock Boolean  @default(true) @map("is_in_stock")
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   orderItems OrderItem[]
+  inCombos   ComboItem[]
 
   @@index([productId])
   @@map("product_variants")
@@ -247,6 +279,21 @@ model Order {
   createdByAdminId  Int?        @map("created_by_admin_id")
   createdByAdmin    AdminUser?  @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
 
+  // Coupon used on this order (customer site). couponCode is a snapshot so the
+  // order still shows the code even if the coupon is edited or deleted later.
+  // freeDelivery = a free-delivery coupon: the delivery charge stays 0, also
+  // when the shop sets the charge later in "manual" charge mode.
+  couponId          Int?        @map("coupon_id")
+  coupon            Coupon?     @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  couponCode        String?     @map("coupon_code") @db.VarChar(30)
+  freeDelivery      Boolean     @default(false) @map("free_delivery")
+  couponRedemption  CouponRedemption?
+
+  // Set the moment status becomes "delivered". Analytics can count a sale on
+  // the day it was delivered instead of the day it was ordered. Backfilled from
+  // updated_at for orders delivered before this column existed.
+  deliveredAt       DateTime?   @map("delivered_at")
+
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
 
@@ -254,7 +301,9 @@ model Order {
 
   @@index([status])
   @@index([createdAt])
+  @@index([deliveredAt])
   @@index([customerId])
+  @@index([couponId])
   @@map("orders")
 }
 
@@ -278,6 +327,9 @@ model OrderItem {
   optionsTotal      Decimal         @default(0) @map("options_total") @db.Decimal(10, 2)
   quantity          Int
   lineTotal         Decimal         @map("line_total") @db.Decimal(10, 2)
+  // For a combo: what was inside, per pack - [{ productName, variantLabel, quantity }].
+  // Snapshot so the packing slip stays right even if the combo is edited later.
+  comboItems        Json?           @map("combo_items")
 
   @@index([orderId])
   @@map("order_items")
@@ -496,3 +548,236 @@ model AdminPasswordReset {
 }
 
 
+
+// Offers & banners shown on the customer site. The admin picks where each one
+// appears (placement); several can share a placement and then rotate as a
+// slider. A placement with nothing live renders nothing at all.
+model Banner {
+  id         Int       @id @default(autoincrement())
+  // Internal name, only shown in the admin panel.
+  title      String    @db.VarChar(150)
+  // announcement | home_top | home_middle | home_bottom | shop_top | product_page | cart_top | popup
+  placement  String    @db.VarChar(30)
+  // Only for the "announcement" placement (text in the top strip).
+  text       String?   @db.VarChar(200)
+  // image (JPG/PNG/WebP/GIF, stored as WebP) | video (MP4/WebM, stored as uploaded). Null for text banners.
+  mediaType  String?   @map("media_type") @db.VarChar(10)
+  desktopPath String?  @map("desktop_path") @db.VarChar(500)
+  desktopUrl String?   @map("desktop_url") @db.VarChar(500)
+  // Optional separate crop for phones; falls back to the desktop file.
+  mobilePath String?   @map("mobile_path") @db.VarChar(500)
+  mobileUrl  String?   @map("mobile_url") @db.VarChar(500)
+  // Still image shown while a video loads (and if it can't play).
+  posterPath String?   @map("poster_path") @db.VarChar(500)
+  posterUrl  String?   @map("poster_url") @db.VarChar(500)
+  altText    String?   @map("alt_text") @db.VarChar(200)
+  // Which part stays visible when the placement has a fixed shape and the
+  // picture has to be trimmed to fit: center | top | bottom | left | right
+  focus      String    @default("center") @db.VarChar(10)
+  // none | product | category | url
+  linkType   String    @default("none") @map("link_type") @db.VarChar(20)
+  linkValue  String?   @map("link_value") @db.VarChar(500)
+  // Optional schedule. Empty = no limit on that side.
+  startsAt   DateTime? @map("starts_at")
+  endsAt     DateTime? @map("ends_at")
+  isActive   Boolean   @default(true) @map("is_active")
+  sortOrder  Int       @default(0) @map("sort_order")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@index([placement, isActive])
+  @@map("banners")
+}
+
+// Discount codes customers type at the cart. Every discount is worked out on
+// the server from the cart in the database - the browser only sends the code.
+model Coupon {
+  id               Int       @id @default(autoincrement())
+  // Stored in capitals; customers can type it in any case.
+  code             String    @unique @db.VarChar(30)
+  // Shown to customers, e.g. "20% off all mutton, up to ₹150".
+  description      String?   @db.VarChar(200)
+  // percent | flat | free_delivery
+  type             String    @db.VarChar(20)
+  // percent: 1-90 · flat: rupees off · free_delivery: unused (0)
+  value            Decimal   @default(0) @db.Decimal(10, 2)
+  // percent only: the most it can take off
+  maxDiscount      Decimal?  @map("max_discount") @db.Decimal(10, 2)
+  // Cart subtotal needed before the coupon works
+  minOrderValue    Decimal?  @map("min_order_value") @db.Decimal(10, 2)
+  // all | categories | products - which cart items the discount is taken from
+  appliesTo        String    @default("all") @map("applies_to") @db.VarChar(20)
+  categoryIds      Json?     @map("category_ids")
+  productIds       Json?     @map("product_ids")
+  firstOrderOnly   Boolean   @default(false) @map("first_order_only")
+  // Uses per phone number (guests included). Null = unlimited.
+  perCustomerLimit Int?      @map("per_customer_limit")
+  // Uses in total. Null = unlimited.
+  totalLimit       Int?      @map("total_limit")
+  usedCount        Int       @default(0) @map("used_count")
+  startsAt         DateTime? @map("starts_at")
+  endsAt           DateTime? @map("ends_at")
+  isActive         Boolean   @default(true) @map("is_active")
+  // Listed under "Available offers" at the cart. Off = secret code you share yourself.
+  showOnSite       Boolean   @default(false) @map("show_on_site")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  orders           Order[]
+  redemptions      CouponRedemption[]
+
+  @@map("coupons")
+}
+
+// One row per order that used a coupon - what the usage limits count.
+// Removed again if the order is cancelled, which frees that use.
+model CouponRedemption {
+  id            Int      @id @default(autoincrement())
+  couponId      Int      @map("coupon_id")
+  coupon        Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  orderId       Int      @unique @map("order_id")
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // Last 10 digits only, so "+91 98765 43210" and "9876543210" count as one customer.
+  customerPhone String   @map("customer_phone") @db.VarChar(20)
+  customerId    Int?     @map("customer_id")
+  discount      Decimal  @db.Decimal(10, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([couponId, customerPhone])
+  @@map("coupon_redemptions")
+}
+
+// Shape of each banner spot, set once by the admin. "auto" = the picture's own
+// shape (nothing trimmed). A fixed shape keeps every slide the same size, so the
+// page never jumps; pictures are then trimmed around the banner's focus point.
+model BannerPlacementSetting {
+  placement    String   @id @db.VarChar(30)
+  // auto | 4:1 | 3:1 | 2:1 | 16:9 | 1:1
+  desktopRatio String   @default("auto") @map("desktop_ratio") @db.VarChar(10)
+  // auto | 2:1 | 16:9 | 1:1 | 4:5
+  mobileRatio  String   @default("auto") @map("mobile_ratio") @db.VarChar(10)
+  // true = edge to edge with no side margin or rounded corners
+  fullWidth    Boolean  @default(false) @map("full_width")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("banner_placement_settings")
+}
+
+// Small labels on product cards and the product page ("Bestseller", "Eid Special").
+// A tag with showCountdown and an end time becomes a "deal" with a live timer.
+model ProductTag {
+  id            Int       @id @default(autoincrement())
+  productId     Int       @map("product_id")
+  product       Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label         String    @db.VarChar(30)
+  // Preset colours only, so every tag matches the site: red | gold | green | blue | dark
+  color         String    @default("red") @db.VarChar(10)
+  startsAt      DateTime? @map("starts_at")
+  endsAt        DateTime? @map("ends_at")
+  showCountdown Boolean   @default(false) @map("show_countdown")
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([productId])
+  @@map("product_tags")
+}
+
+// Small store-wide switches kept as JSON by key (e.g. "auto_bestseller").
+model SiteSetting {
+  key       String   @id @db.VarChar(50)
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("site_settings")
+}
+
+// One line inside a combo pack: "Mutton Keema 500 GM x 1".
+// Restrict on the variant: a variant used in a combo can't be deleted until
+// it is taken out of the combo, so a combo never silently loses an item.
+model ComboItem {
+  id             Int            @id @default(autoincrement())
+  comboProductId Int            @map("combo_product_id")
+  comboProduct   Product        @relation(fields: [comboProductId], references: [id], onDelete: Cascade)
+  variantId      Int            @map("variant_id")
+  variant        ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity       Int            @default(1)
+  sortOrder      Int            @default(0) @map("sort_order")
+
+  @@index([comboProductId])
+  @@index([variantId])
+  @@map("combo_items")
+}
+
+model Recipe {
+  id          Int      @id @default(autoincrement())
+  title       String   @db.VarChar(150)
+  slug        String   @unique @db.VarChar(170)
+  intro       String?  @db.Text
+  prepMinutes Int?     @map("prep_minutes")
+  cookMinutes Int?     @map("cook_minutes")
+  serves      Int?
+  difficulty  String   @default("easy") @db.VarChar(10)
+  // 0 = not spicy ... 3 = very spicy
+  spiceLevel  Int      @default(1) @map("spice_level")
+  videoUrl    String?  @map("video_url") @db.VarChar(500)
+  // Cover = mirror of the first RecipeImage, like products.
+  imageUrl    String?  @map("image_url") @db.VarChar(500)
+  isPublished Boolean  @default(false) @map("is_published")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  images      RecipeImage[]
+  ingredients RecipeIngredient[]
+  steps       RecipeStep[]
+
+  @@map("recipes")
+}
+
+model RecipeImage {
+  id        Int    @id @default(autoincrement())
+  recipeId  Int    @map("recipe_id")
+  recipe    Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  path      String @db.VarChar(500)
+  url       String @db.VarChar(500)
+  sortOrder Int    @default(0) @map("sort_order")
+
+  @@index([recipeId])
+  @@map("recipe_images")
+}
+
+model RecipeIngredient {
+  id        Int      @id @default(autoincrement())
+  recipeId  Int      @map("recipe_id")
+  recipe    Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  quantity  String?  @db.VarChar(30)
+  unit      String?  @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  note      String?  @db.VarChar(100)
+  // Optional link to a product we sell -> "Add to cart" on the recipe page.
+  productId Int?     @map("product_id")
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  sortOrder Int      @default(0) @map("sort_order")
+
+  @@index([recipeId])
+  @@index([productId])
+  @@map("recipe_ingredients")
+}
+
+model RecipeStep {
+  id        Int     @id @default(autoincrement())
+  recipeId  Int     @map("recipe_id")
+  recipe    Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  text      String  @db.Text
+  // none | low | medium | high
+  flame     String  @default("none") @db.VarChar(10)
+  minutes   Int?
+  tip       String? @db.VarChar(300)
+  imagePath String? @map("image_path") @db.VarChar(500)
+  imageUrl  String? @map("image_url") @db.VarChar(500)
+  sortOrder Int     @default(0) @map("sort_order")
+
+  @@index([recipeId])
+  @@map("recipe_steps")
+}

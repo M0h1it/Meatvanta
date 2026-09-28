@@ -3,6 +3,9 @@ const { validateStatusUpdate } = require("../../validators/orders/orders.validat
 const deliverySettingsService = require("../deliverySettings/deliverySettings.service");
 const notificationsService = require("../notifications/notifications.service");
 const razorpayService = require("../payments/razorpay.service");
+const ist = require("../../utils/istDate.util");
+const couponsService = require("../coupons/coupons.service");
+const combosService = require("../combos/combos.service");
 
 function notFoundError(message) {
   const err = new Error(message);
@@ -98,10 +101,14 @@ async function createOrder({ customerName, customerPhone, deliveryAddress, items
   const variantIds = items.map((i) => i.productVariantId);
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: variantIds } },
-    include: { product: { select: { name: true } } },
+    include: { product: { select: { name: true, isCombo: true } } },
   });
 
   const variantsById = new Map(variants.map((v) => [v.id, v]));
+  // Combos: everything inside must be available; the contents are saved on the line.
+  const comboContents = await combosService.checkoutSnapshots(
+    variants.filter((v) => v.product.isCombo).map((v) => v.productId)
+  );
 
   const lineItems = [];
   for (const item of items) {
@@ -126,6 +133,7 @@ async function createOrder({ customerName, customerPhone, deliveryAddress, items
       unitPrice,
       selectedOptions: selectedOptions.length ? selectedOptions : undefined,
       optionsTotal,
+      comboItems: comboContents.get(variant.productId),
       quantity: item.quantity,
       lineTotal: (unitPrice + optionsTotal) * item.quantity,
     });
@@ -208,8 +216,17 @@ async function updateOrderStatus(id, requestedStatus) {
   if (transitionError) throw badRequestError(transitionError);
 
   const data = { status: requestedStatus };
-  if (requestedStatus === "delivered" && existing.paymentMethod === "cod") {
-    data.paymentStatus = "paid"; // COD collected on delivery
+  if (requestedStatus === "delivered") {
+    data.deliveredAt = new Date(); // lets analytics count the sale on its delivery day
+    if (existing.paymentMethod === "cod") data.paymentStatus = "paid"; // COD collected on delivery
+  }
+
+  if (requestedStatus === "cancelled") {
+    // A cancelled order gives its coupon use back to the customer.
+    return prisma.$transaction(async (tx) => {
+      await couponsService.releaseRedemption(tx, id);
+      return tx.order.update({ where: { id }, data, include: orderInclude });
+    });
   }
 
   return prisma.order.update({ where: { id }, data, include: orderInclude });
@@ -221,8 +238,9 @@ async function cancelOrder(id) {
 
 /** Powers the admin dashboard's stat cards - counts only, cheap to compute. */
 async function getDashboardStats() {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  // Midnight in India, not midnight on the server clock (the VPS runs in UTC,
+  // which made "today" start at 5:30 AM IST).
+  const startOfToday = ist.startOfIstDay(ist.todayKey());
 
   const [todayOrders, pendingCount, todayDelivered, totalCustomers] = await Promise.all([
     prisma.order.count({ where: { createdAt: { gte: startOfToday } } }),
@@ -251,11 +269,18 @@ async function priceCheckoutItems(items) {
   const variantIds = items.map((i) => i.productVariantId);
   const variants = await prisma.productVariant.findMany({
     where: { id: { in: variantIds } },
-    include: { product: { select: { name: true, isActive: true, isInStock: true } } },
+    include: { product: { select: { name: true, isActive: true, isInStock: true, categoryId: true, isCombo: true } } },
   });
   const variantsById = new Map(variants.map((v) => [v.id, v]));
+  // Combos: everything inside must be available; the contents are saved on the line.
+  const comboContents = await combosService.checkoutSnapshots(
+    variants.filter((v) => v.product.isCombo).map((v) => v.productId)
+  );
 
   const lineItems = [];
+  // Same order as lineItems; product/category per line so coupons can target
+  // them. Kept separate because lineItems go straight into OrderItem rows.
+  const lines = [];
   for (const item of items) {
     const variant = variantsById.get(item.productVariantId);
     if (!variant || !variant.product.isActive) {
@@ -283,12 +308,61 @@ async function priceCheckoutItems(items) {
       unitPrice,
       selectedOptions: selectedOptions.length ? selectedOptions : undefined,
       optionsTotal,
+      comboItems: comboContents.get(variant.productId),
       quantity: item.quantity,
       lineTotal: (unitPrice + optionsTotal) * item.quantity,
     });
+    lines.push({
+      lineTotal: (unitPrice + optionsTotal) * item.quantity,
+      productId: variant.productId,
+      categoryId: variant.product.categoryId,
+    });
   }
 
-  return lineItems;
+  return { lineItems, lines };
+}
+
+/**
+ * Coupon preview for the cart/checkout page ("You save ₹120"). Nothing is
+ * reserved - the same check runs again, for real, when the order is placed.
+ */
+async function previewCoupon({ code, items, customerPhone }) {
+  const settings = await deliverySettingsService.getSettings();
+  const { lines } = await priceCheckoutItems(items);
+  const subtotal = lines.reduce((s, l) => s + l.lineTotal, 0);
+  const isFlatCharge = settings.deliveryChargeMode === "flat";
+  const deliveryCharge = isFlatCharge ? Number(settings.flatDeliveryCharge) : 0;
+
+  const applied = await applyCouponToCheckout({ couponCode: code, lines, subtotal, deliveryCharge, customerPhone });
+  return {
+    code: applied.coupon.code,
+    summary: applied.summary,
+    freeDelivery: applied.freeDelivery,
+    discount: applied.discount,
+    // What the customer saves in total (items + waived delivery).
+    savings: applied.savings,
+    subtotal,
+    deliveryCharge: applied.deliveryCharge,
+    deliveryChargeMode: settings.deliveryChargeMode,
+    total: subtotal + applied.deliveryCharge - applied.discount,
+  };
+}
+
+/**
+ * Applies the customer's coupon (if any) to a priced cart. Returns what goes
+ * on the order. Free delivery is stored as deliveryCharge 0 + freeDelivery,
+ * not as a discount, so the order total stays simple.
+ */
+async function applyCouponToCheckout({ couponCode, lines, subtotal, deliveryCharge, customerPhone }) {
+  if (!couponCode) {
+    return { coupon: null, discount: 0, deliveryCharge, freeDelivery: false, savings: 0 };
+  }
+  const result = await couponsService.evaluateCoupon({ code: couponCode, lines, deliveryCharge, customerPhone });
+  if (result.freeDelivery) {
+    return { coupon: result.coupon, summary: result.summary, discount: 0, deliveryCharge: 0, freeDelivery: true, savings: deliveryCharge };
+  }
+  const discount = Math.min(result.discount, subtotal);
+  return { coupon: result.coupon, summary: result.summary, discount, deliveryCharge, freeDelivery: false, savings: discount };
 }
 
 /** Alerts the shop that a real, paid-for (or COD) order came in. Deliberately
@@ -321,7 +395,7 @@ async function notifyNewOrder(order) {
 async function createPublicOrder(payload, customerId = null) {
   const {
     customerName, customerPhone, deliveryAddress, deliveryDate,
-    items, paymentMethod, notes,
+    items, paymentMethod, notes, couponCode,
   } = payload;
 
   const settings = await deliverySettingsService.getSettings();
@@ -341,11 +415,26 @@ async function createPublicOrder(payload, customerId = null) {
     throw badRequestError("That delivery date is no longer available. Please pick another.");
   }
 
-  const lineItems = await priceCheckoutItems(items);
+  const { lineItems, lines } = await priceCheckoutItems(items);
   const subtotal = lineItems.reduce((sum, li) => sum + li.lineTotal, 0);
   const isFlatCharge = settings.deliveryChargeMode === "flat";
-  const deliveryCharge = isFlatCharge ? Number(settings.flatDeliveryCharge) : 0;
-  const total = subtotal + deliveryCharge;
+  const baseDeliveryCharge = isFlatCharge ? Number(settings.flatDeliveryCharge) : 0;
+
+  // Coupon is re-checked here from the priced cart - the preview the customer
+  // saw earlier is never trusted.
+  const applied = await applyCouponToCheckout({
+    couponCode,
+    lines,
+    subtotal,
+    deliveryCharge: baseDeliveryCharge,
+    customerPhone,
+  });
+  const deliveryCharge = applied.deliveryCharge;
+  const discount = applied.discount;
+  const total = subtotal + deliveryCharge - discount;
+  const couponFields = applied.coupon
+    ? { couponId: applied.coupon.id, couponCode: applied.coupon.code, freeDelivery: applied.freeDelivery }
+    : {};
 
   if (paymentMethod === "cod") {
     const order = await prisma.$transaction(async (tx) => {
@@ -364,13 +453,26 @@ async function createPublicOrder(payload, customerId = null) {
           paymentStatus: "unpaid", // collected on delivery
           subtotal,
           deliveryCharge,
-          discount: 0,
+          discount,
           total,
+          ...couponFields,
           notes: notes ? notes.trim() : null,
           createdByAdminId: null, // placed by a customer, not staff
           items: { create: lineItems },
         },
       });
+
+      if (applied.coupon) {
+        // Checks the total-uses limit again atomically - the last use can't be taken twice.
+        await couponsService.recordRedemption(tx, {
+          couponId: applied.coupon.id,
+          orderId: created.id,
+          customerPhone,
+          customerId,
+          discount: applied.savings,
+          enforceLimit: true,
+        });
+      }
 
       return tx.order.update({
         where: { id: created.id },
@@ -406,8 +508,13 @@ async function createPublicOrder(payload, customerId = null) {
         lineItems,
         subtotal,
         deliveryCharge,
+        discount,
         total,
         isFlatCharge,
+        couponId: applied.coupon ? applied.coupon.id : null,
+        couponCode: applied.coupon ? applied.coupon.code : null,
+        freeDelivery: applied.freeDelivery,
+        couponSavings: applied.savings,
         deliveryStartTime: settings.deliveryStartTime,
         deliveryEndTime: settings.deliveryEndTime,
       },
@@ -527,13 +634,31 @@ async function promotePendingCheckout(razorpayOrderId, razorpayPaymentId) {
         paymentVerifiedAt: new Date(),
         subtotal: d.subtotal,
         deliveryCharge: d.deliveryCharge,
-        discount: 0,
+        discount: d.discount || 0,
         total: d.total,
+        ...(d.couponCode ? { couponCode: d.couponCode, freeDelivery: Boolean(d.freeDelivery) } : {}),
         notes: d.notes,
         createdByAdminId: null,
         items: { create: d.lineItems },
       },
     });
+
+    if (d.couponId) {
+      // The customer already paid the discounted price, so the discount is
+      // honoured even if the coupon ran out or was switched off meanwhile.
+      const stillExists = await tx.coupon.findUnique({ where: { id: d.couponId } });
+      if (stillExists) {
+        await tx.order.update({ where: { id: created.id }, data: { couponId: d.couponId } });
+        await couponsService.recordRedemption(tx, {
+          couponId: d.couponId,
+          orderId: created.id,
+          customerPhone: d.customerPhone,
+          customerId: pending.customerId,
+          discount: d.couponSavings || d.discount || 0,
+          enforceLimit: false,
+        });
+      }
+    }
 
     const withNumber = await tx.order.update({
       where: { id: created.id },
@@ -598,7 +723,8 @@ async function setDeliveryCharge(id, deliveryCharge) {
   const existing = await prisma.order.findUnique({ where: { id } });
   if (!existing) throw notFoundError("Order not found.");
 
-  const charge = Number(deliveryCharge);
+  // A free-delivery coupon keeps the charge at 0 whatever amount is entered.
+  const charge = existing.freeDelivery ? 0 : Number(deliveryCharge);
   const total = Number(existing.subtotal) + charge - Number(existing.discount);
 
   return prisma.order.update({
@@ -626,6 +752,7 @@ module.exports = {
   getOrderById,
   updateOrderStatus,
   cancelOrder,
+  previewCoupon,
   getDashboardStats,
   createPublicOrder,
   getOrderForTracking,

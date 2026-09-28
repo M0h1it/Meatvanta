@@ -3,6 +3,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { fetchCategories, fetchProducts } from "../api/shopApi";
 import { useDocumentMeta } from "../../../hooks/useDocumentMeta";
 import { productImage } from "../../../lib/images";
+import BannerSlot from "../../banners/components/BannerSlot";
+import ProductBadges from "../../../components/product/ProductBadges";
+import PriceLine from "../../../components/product/PriceLine";
 
 function lowestPrice(product) {
   if (!product?.variants?.length) return null;
@@ -90,6 +93,9 @@ export default function ShopPage() {
         </div>
       )}
 
+      {/* Offers - nothing renders when none are live */}
+      <BannerSlot placement="shop_top" inset="inside" className="mb-6" label="Offers" />
+
       {/* Category pills */}
       <div className="flex gap-2.5 overflow-x-auto pb-2 mb-6 -mx-gutter px-gutter md:mx-0 md:px-0">
         <button onClick={() => selectCategory("")} className={pillClass(activeCategory === "")}>
@@ -154,6 +160,7 @@ export default function ShopPage() {
                   <span className="absolute top-3 left-3 bg-brand-dark text-white text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-sm">
                     {product.category?.name}
                   </span>
+                  {!isUnavailable && <ProductBadges product={product} className="absolute bottom-3 left-3 right-3" />}
                   {isUnavailable && (
                     <span className="absolute inset-0 flex items-center justify-center">
                       <span className="bg-white text-ink text-xs font-semibold px-4 py-2 rounded-full shadow-sm">
@@ -165,11 +172,7 @@ export default function ShopPage() {
 
                 <div className="p-4 flex-1 flex flex-col">
                   <h2 className="font-display font-bold text-ink leading-snug">{product.name}</h2>
-                  {from !== null && (
-                    <p className="text-sm text-ink/70 mt-1">
-                      from <span className="font-bold text-ink">₹{from}</span>
-                    </p>
-                  )}
+                  {from !== null && <PriceLine product={product} className="mt-1" />}
                   <p
                     className={`text-xs mt-auto pt-3 border-t border-hairline ${
                       isUnavailable ? "text-brand" : "text-ink/50"
@@ -177,6 +180,8 @@ export default function ShopPage() {
                   >
                     {isUnavailable
                       ? "Currently Unavailable"
+                      : product.combo
+                      ? `Combo · ${product.combo.items.length} ${product.combo.items.length === 1 ? "item" : "items"} inside`
                       : `${availableWeights} ${availableWeights === 1 ? "weight" : "weights"} available`}
                   </p>
                 </div>

@@ -16,6 +16,8 @@ import AboutPage from "./features/content/pages/AboutPage";
 import ContactPage from "./features/content/pages/ContactPage";
 import FaqPage from "./features/content/pages/FaqPage";
 import DeliveryInfoPage from "./features/content/pages/DeliveryInfoPage";
+import RecipesPage from "./features/recipes/pages/RecipesPage";
+import RecipeDetailPage from "./features/recipes/pages/RecipeDetailPage";
 
 export default function App() {
   return (
@@ -25,6 +27,8 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/shop" element={<ShopPage />} />
         <Route path="/product/:id" element={<ProductDetailPage />} />
+        <Route path="/recipes" element={<RecipesPage />} />
+        <Route path="/recipes/:slug" element={<RecipeDetailPage />} />
         <Route path="/cart" element={<CartPage />} />
         <Route path="/checkout" element={<CheckoutPage />} />
         <Route path="/order-confirmation/:orderNumber" element={<OrderConfirmationPage />} />

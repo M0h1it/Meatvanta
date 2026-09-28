@@ -603,7 +603,10 @@ export default function OrdersPage() {
                         const opts = i.selectedOptions?.length
                           ? ` [${i.selectedOptions.map((s) => s.optionName).join(", ")}]`
                           : "";
-                        return `${i.quantity}x ${i.productName} (${i.variantLabel})${opts}`;
+                        const inside = i.comboItems?.length
+                          ? ` {${i.comboItems.map((c) => `${c.quantity * i.quantity}x ${c.productName} ${c.variantLabel}`).join(" + ")}}`
+                          : "";
+                        return `${i.quantity}x ${i.productName} (${i.variantLabel})${opts}${inside}`;
                       })
                       .join(", ")}
                   </div>

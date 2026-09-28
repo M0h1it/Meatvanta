@@ -3,10 +3,15 @@ import { Link, NavLink, useNavigate, useSearchParams, useLocation } from "react-
 import { useCart } from "../../hooks/useCart";
 import { useCustomerAuth } from "../../hooks/useCustomerAuth";
 import BrandLogo from "../common/BrandLogo";
+import { useBanners } from "../../features/banners/useBanners";
+import AnnouncementText from "../../features/banners/components/AnnouncementText";
+import { useRecipes } from "../../features/recipes/useRecipes";
 
 export default function Header() {
   const { totalCount } = useCart();
   const { customer, defaultAddress, isAuthenticated, openLogin } = useCustomerAuth();
+  const announcements = useBanners("announcement");
+  const hasAnnouncements = announcements.length > 0;
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -14,6 +19,7 @@ export default function Header() {
   const [query, setQuery] = useState("");
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { recipes } = useRecipes();
 
   // Keep the box in sync with the URL (back button, category click, direct link).
   useEffect(() => {
@@ -40,14 +46,16 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-40 bg-surface border-b border-hairline">
-      {/* Top trust strip */}
-      <div className="hidden sm:block bg-brand-dark text-white/90">
-        <div className="page-x flex items-center justify-between py-1.5 text-[11px] font-medium tracking-wide">
-          <span className="flex items-center gap-1.5">
-            <span className="material-symbols-outlined text-sm">local_shipping</span>
-            Free Delivery on Orders Above ₹999
-          </span>
-          <span className="flex items-center gap-4">
+      {/* Top strip: offer announcements (admin-managed) + trust badges.
+          Phones only see the strip when there is an announcement. */}
+      <div className={`${hasAnnouncements ? "block" : "hidden sm:block"} bg-brand-dark text-white/90`}>
+        <div
+          className={`page-x flex items-center gap-4 py-1.5 text-[11px] font-medium tracking-wide ${
+            hasAnnouncements ? "justify-center sm:justify-between" : "justify-end"
+          }`}
+        >
+          <AnnouncementText announcements={announcements} />
+          <span className="hidden sm:flex items-center gap-4 shrink-0">
             <span className="flex items-center gap-1">
               <span className="material-symbols-outlined text-sm">eco</span>
               Fresh
@@ -92,6 +100,12 @@ export default function Header() {
               <NavLink to="/shop" className={navLinkClass}>
                 Shop
               </NavLink>
+              {/* Only once a recipe is published */}
+              {recipes.length > 0 && (
+                <NavLink to="/recipes" className={navLinkClass}>
+                  Recipes
+                </NavLink>
+              )}
               {isAuthenticated && (
                 <NavLink to="/my-orders" className={navLinkClass}>
                   My Orders
@@ -208,6 +222,19 @@ export default function Header() {
             >
               Shop
             </NavLink>
+            {recipes.length > 0 && (
+              <NavLink
+                to="/recipes"
+                onClick={() => setMobileMenuOpen(false)}
+                className={({ isActive }) =>
+                  `px-3 py-2.5 rounded-sm text-sm font-semibold ${
+                    isActive ? "bg-brand/10 text-brand" : "text-ink/80 hover:bg-surface-alt"
+                  }`
+                }
+              >
+                Recipes
+              </NavLink>
+            )}
             {isAuthenticated && (
               <NavLink
                 to="/my-orders"

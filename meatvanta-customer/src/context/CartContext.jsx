@@ -1,6 +1,15 @@
 import { createContext, useEffect, useState, useCallback } from "react";
 
 const STORAGE_KEY = "meat-vanta-cart";
+const COUPON_KEY = "meat-vanta-coupon";
+
+function loadCoupon() {
+  try {
+    return localStorage.getItem(COUPON_KEY) || "";
+  } catch {
+    return "";
+  }
+}
 
 export const CartContext = createContext(null);
 
@@ -30,10 +39,22 @@ function buildLineKey(variantId, optionIds) {
  */
 export function CartProvider({ children }) {
   const [items, setItems] = useState(loadInitialCart);
+  // Only the CODE is kept here. Whether it works and what it saves is always
+  // asked from the server (see useCouponPreview) - never worked out in the browser.
+  const [couponCode, setCouponCode] = useState(loadCoupon);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  useEffect(() => {
+    try {
+      if (couponCode) localStorage.setItem(COUPON_KEY, couponCode);
+      else localStorage.removeItem(COUPON_KEY);
+    } catch {
+      /* storage blocked - the code just won't survive a reload */
+    }
+  }, [couponCode]);
 
   const addItem = useCallback((product, variant, quantity, selectedOptions = []) => {
     const optionIds = selectedOptions.map((o) => o.id);
@@ -60,6 +81,10 @@ export function CartProvider({ children }) {
           optionIds,
           optionsTotal,
           optionLabels: selectedOptions.map((o) => o.name),
+          // Combos: "Chicken Curry Cut 1 KG + Mutton Keema 500 GM x2"
+          includes: product.combo?.items?.length
+            ? product.combo.items.map((c) => `${c.productName} ${c.variantLabel}${c.quantity > 1 ? ` ×${c.quantity}` : ""}`).join(" + ")
+            : undefined,
           quantity,
         },
       ];
@@ -78,7 +103,10 @@ export function CartProvider({ children }) {
     setItems((current) => current.filter((i) => i.lineKey !== lineKey));
   }, []);
 
-  const clearCart = useCallback(() => setItems([]), []);
+  const clearCart = useCallback(() => {
+    setItems([]);
+    setCouponCode("");
+  }, []);
 
   const totalCount = items.reduce((sum, i) => sum + i.quantity, 0);
   const totalPrice = items.reduce(
@@ -86,7 +114,17 @@ export function CartProvider({ children }) {
     0
   );
 
-  const value = { items, addItem, updateQuantity, removeItem, clearCart, totalCount, totalPrice };
+  const value = {
+    items,
+    addItem,
+    updateQuantity,
+    removeItem,
+    clearCart,
+    totalCount,
+    totalPrice,
+    couponCode,
+    setCouponCode,
+  };
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

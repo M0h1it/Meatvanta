@@ -1,8 +1,8 @@
 /**
  * Two real assets in /public:
- *  - logo.png       - the full "meatvanta" wordmark (red/gold text, transparent
+ *  - logo.webp       - the full "meatvanta" wordmark (red/gold text, transparent
  *                      background). Reads fine on light surfaces (the header).
- *  - logo-mark.png   - just the bull-horn "m" mark, white/gold, transparent
+ *  - logo-mark.webp   - just the bull-horn "m" mark, white/gold, transparent
  *                      background. The wordmark's red text nearly disappears
  *                      on the brand-dark red footer, so the footer uses this
  *                      instead, paired with the shop name as text.
@@ -11,7 +11,7 @@
  * variant="mark"                -> logo-mark.png, roughly square, pair with text.
  */
 export default function BrandLogo({ className = "h-10", variant = "wordmark" }) {
-  const src = variant === "mark" ? "/logo-mark.png" : "/logo.png";
+  const src = variant === "mark" ? "/logo-mark.webp" : "/logo.webp";
 
   return (
     <span className={`inline-flex items-center shrink-0 ${className}`}>

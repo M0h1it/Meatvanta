@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useCustomerAuth } from "../../../hooks/useCustomerAuth";
 import BrandLogo from "../../../components/common/BrandLogo";
+import { loadMsg91Widget } from "../../../lib/externalScripts";
 
 const STEPS = { PHONE: "phone", OTP: "otp" };
 
@@ -59,6 +60,13 @@ export default function LoginSheet() {
     if (step === STEPS.OTP && otpInputRef.current) otpInputRef.current.focus();
   }, [step]);
 
+  // The MSG91 widget is loaded only when the sheet opens (not on every page).
+  // Started right away so it's usually ready before the number is typed.
+  // A failure here is handled on "Send Code", which tries again.
+  useEffect(() => {
+    if (isLoginOpen) loadMsg91Widget().catch(() => {});
+  }, [isLoginOpen]);
+
   useEffect(() => {
     if (!isLoginOpen) return;
     function onKeyDown(e) {
@@ -80,16 +88,21 @@ export default function LoginSheet() {
    * window.sendOtp, which the widget script in index.html exposes once it
    * finishes loading (exposeMethods: true).
    */
-  function handleSendOtp(e) {
+  async function handleSendOtp(e) {
     e?.preventDefault();
     setError(null);
+    setIsSubmitting(true);
 
     if (typeof window.sendOtp !== "function") {
-      setError("Couldn't load the verification service. Please refresh and try again.");
-      return;
+      try {
+        await loadMsg91Widget(); // still loading, or failed earlier - try (again) now
+      } catch {
+        setError("Couldn't load the verification service. Please check your connection and try again.");
+        setIsSubmitting(false);
+        return;
+      }
     }
 
-    setIsSubmitting(true);
     window.sendOtp(
       `91${phone}`,
       (data) => {
@@ -198,7 +211,8 @@ export default function LoginSheet() {
             so everything stays readable over the photo. */}
         <div className="relative hidden sm:flex flex-col justify-between p-8 text-white overflow-hidden">
           <img
-            src="/hero-mobile.jpg"
+            src="/hero-mobile.webp"
+            loading="lazy"
             alt=""
             aria-hidden="true"
             className="absolute inset-0 w-full h-full object-cover"

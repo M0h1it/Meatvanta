@@ -2,6 +2,11 @@ function isPositiveNumber(val) {
   return typeof val === "number" && !Number.isNaN(val) && val > 0;
 }
 
+/** MRP is optional: empty/null clears it, otherwise a positive number. */
+function isValidMrp(val) {
+  return val === undefined || val === null || val === "" || isPositiveNumber(Number(val));
+}
+
 function validateVariantShape(variant) {
   const errors = {};
   if (!variant || typeof variant !== "object") return { label: "Variant must be an object." };
@@ -11,6 +16,9 @@ function validateVariantShape(variant) {
   }
   if (!isPositiveNumber(Number(variant.price))) {
     errors.price = "Variant price must be a positive number.";
+  }
+  if (!isValidMrp(variant.mrp)) {
+    errors.mrp = "MRP must be a positive number, or left empty.";
   }
   return errors;
 }
@@ -62,13 +70,16 @@ function validateAddVariant(body) {
 
 function validateUpdateVariant(body) {
   const errors = {};
-  const { label, price, isInStock } = body || {};
+  const { label, price, isInStock, mrp } = body || {};
 
   if (label !== undefined && (typeof label !== "string" || label.trim().length < 1)) {
     errors.label = "Label cannot be empty.";
   }
   if (price !== undefined && !isPositiveNumber(Number(price))) {
     errors.price = "Price must be a positive number.";
+  }
+  if (!isValidMrp(mrp)) {
+    errors.mrp = "MRP must be a positive number, or left empty.";
   }
   if (isInStock !== undefined && typeof isInStock !== "boolean") {
     errors.isInStock = "isInStock must be true or false.";

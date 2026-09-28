@@ -4,8 +4,11 @@ const router = express.Router();
 const publicController = require("../../controllers/public/public.controller");
 const deliverySettingsController = require("../../controllers/deliverySettings/deliverySettings.controller");
 const shopInfoController = require("../../controllers/shopInfo/shopInfo.controller");
+const bannersController = require("../../controllers/banners/banners.controller");
+const recipesController = require("../../controllers/recipes/recipes.controller");
 const customerAuthRoutes = require("../customerAuth/customerAuth.routes");
 const { requireCustomerAuth, attachCustomerIfPresent } = require("../../middlewares/customerAuth.middleware");
+const { couponRateLimiter } = require("../../middlewares/rateLimiter.middleware");
 
 // No requireAuth anywhere in this file - deliberately public.
 router.get("/categories", publicController.listCategories);
@@ -18,6 +21,18 @@ router.get("/delivery-availability", deliverySettingsController.getPublicAvailab
 
 // Contact details, story and hours - powers the About/Contact/FAQ pages.
 router.get("/shop-info", shopInfoController.getPublic);
+
+// Live offers & banners, grouped by placement. Empty placements are simply absent.
+router.get("/banners", bannersController.listLive);
+
+// Published recipes. The site hides the Recipes menu when the list is empty.
+router.get("/recipes", recipesController.listPublished);
+router.get("/recipes/:slug", recipesController.getPublished);
+
+// Coupons: the cart's "Available offers" list, and a preview of a typed code.
+// The real check happens again when the order is placed.
+router.get("/coupons", publicController.listCoupons);
+router.post("/coupons/apply", couponRateLimiter, attachCustomerIfPresent, publicController.applyCoupon);
 
 // Customer accounts, sessions and address book.
 router.use("/auth", customerAuthRoutes);

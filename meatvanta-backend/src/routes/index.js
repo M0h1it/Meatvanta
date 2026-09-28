@@ -12,6 +12,10 @@ const deliverySettingsRoutes = require("./deliverySettings/deliverySettings.rout
 const notificationsRoutes = require("./notifications/notifications.routes");
 const customersRoutes = require("./customers/customers.routes");
 const shopInfoRoutes = require("./shopInfo/shopInfo.routes");
+const analyticsRoutes = require("./analytics/analytics.routes");
+const bannersRoutes = require("./banners/banners.routes");
+const couponsRoutes = require("./coupons/coupons.routes");
+const recipesRoutes = require("./recipes/recipes.routes");
 
 router.use("/auth", authRoutes);
 router.use("/roles", rolesRoutes);
@@ -24,8 +28,9 @@ router.use("/delivery-settings", deliverySettingsRoutes);
 router.use("/notifications", notificationsRoutes);
 router.use("/customers", customersRoutes);
 router.use("/shop-info", shopInfoRoutes);
-
-// Next features get mounted here the same way, e.g.:
-// router.use("/coupons", couponsRoutes);
+router.use("/analytics", analyticsRoutes);
+router.use("/banners", bannersRoutes);
+router.use("/coupons", couponsRoutes);
+router.use("/recipes", recipesRoutes);
 
 module.exports = router;

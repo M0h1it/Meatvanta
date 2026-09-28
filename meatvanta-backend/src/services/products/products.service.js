@@ -1,8 +1,11 @@
 const prisma = require("../../config/db");
-const path = require("path");
-const { toPublicUrl, deleteLocalImage, UPLOADS_DIR } = require("../../utils/localImageStorage.util");
-const { uploadToR2, deleteFromR2, toR2PublicUrl, isR2Configured } = require("../../utils/r2Storage.util");
+const { toPublicUrl, writeLocalImage, deleteLocalImage } = require("../../utils/localImageStorage.util");
+const { processProductImage } = require("../../utils/imageProcessor.util");
 const { slugify } = require("../../utils/slugify.util");
+const combosService = require("../combos/combos.service");
+
+// Most images a single product's gallery may hold.
+const MAX_IMAGES_PER_PRODUCT = 8;
 
 function notFoundError(message) {
   const err = new Error(message);
@@ -11,6 +14,27 @@ function notFoundError(message) {
   return err;
 }
 
+/** "" / null -> null (no MRP); a number must be above the selling price to mean anything. */
+function parseMrp(mrp, price) {
+  if (mrp === undefined) return undefined;
+  if (mrp === null || mrp === "") return null;
+  const value = Number(mrp);
+  if (price !== undefined && price !== null && value <= Number(price)) {
+    throw validationError(`MRP (₹${value}) must be higher than the selling price (₹${Number(price)}), or left empty.`);
+  }
+  return value;
+}
+
+function validationError(message) {
+  const err = new Error(message);
+  err.statusCode = 422;
+  err.expose = true;
+  return err;
+}
+
+// Gallery order: sortOrder first, id as a tie-breaker so the order is always stable.
+const imageOrderBy = [{ sortOrder: "asc" }, { id: "asc" }];
+
 const productInclude = {
   category: { select: { id: true, name: true, slug: true } },
   variants: { orderBy: { sortOrder: "asc" } },
@@ -18,9 +42,17 @@ const productInclude = {
     orderBy: { sortOrder: "asc" },
     include: { options: { orderBy: { sortOrder: "asc" } } },
   },
+  images: {
+    orderBy: imageOrderBy,
+    select: { id: true, url: true, sortOrder: true },
+  },
+  tags: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
+  comboItems: combosService.comboItemsInclude,
 };
 
-async function createProduct({ name, categoryId, description, imageUrl, sortOrder, variants }) {
+// imageUrl is intentionally not accepted here: the cover image is managed only
+// through the gallery endpoints, so it can never drift from product_images.
+async function createProduct({ name, categoryId, description, sortOrder, variants }) {
   const category = await prisma.category.findUnique({ where: { id: categoryId } });
   if (!category) throw notFoundError("categoryId does not match any existing category.");
 
@@ -29,12 +61,12 @@ async function createProduct({ name, categoryId, description, imageUrl, sortOrde
       name: name.trim(),
       categoryId,
       description: description || null,
-      imageUrl: imageUrl || null,
       sortOrder: sortOrder ?? 0,
       variants: {
         create: variants.map((v, index) => ({
           label: v.label.trim(),
           price: Number(v.price),
+          mrp: parseMrp(v.mrp, v.price) ?? null,
           isInStock: v.isInStock ?? true,
           sortOrder: v.sortOrder ?? index,
         })),
@@ -76,7 +108,7 @@ async function getProductById(id) {
   return product;
 }
 
-async function updateProduct(id, { name, categoryId, description, imageUrl, isActive, isInStock, sortOrder }) {
+async function updateProduct(id, { name, categoryId, description, isActive, isInStock, sortOrder }) {
   const existing = await prisma.product.findUnique({ where: { id } });
   if (!existing) throw notFoundError("Product not found.");
 
@@ -89,7 +121,6 @@ async function updateProduct(id, { name, categoryId, description, imageUrl, isAc
   if (name !== undefined) data.name = name.trim();
   if (categoryId !== undefined) data.categoryId = categoryId;
   if (description !== undefined) data.description = description;
-  if (imageUrl !== undefined) data.imageUrl = imageUrl;
   if (isActive !== undefined) data.isActive = isActive;
   if (isInStock !== undefined) data.isInStock = isInStock;
   if (sortOrder !== undefined) data.sortOrder = sortOrder;
@@ -105,7 +136,7 @@ async function deleteProduct(id) {
   return prisma.product.update({ where: { id }, data: { isActive: false }, include: productInclude });
 }
 
-async function addVariant(productId, { label, price, isInStock, sortOrder }) {
+async function addVariant(productId, { label, price, mrp, isInStock, sortOrder }) {
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product) throw notFoundError("Product not found.");
 
@@ -114,19 +145,22 @@ async function addVariant(productId, { label, price, isInStock, sortOrder }) {
       productId,
       label: label.trim(),
       price: Number(price),
+      mrp: parseMrp(mrp, price) ?? null,
       isInStock: isInStock ?? true,
       sortOrder: sortOrder ?? 0,
     },
   });
 }
 
-async function updateVariant(variantId, { label, price, isInStock, sortOrder }) {
+async function updateVariant(variantId, { label, price, mrp, isInStock, sortOrder }) {
   const existing = await prisma.productVariant.findUnique({ where: { id: variantId } });
   if (!existing) throw notFoundError("Variant not found.");
 
   const data = {};
   if (label !== undefined) data.label = label.trim();
   if (price !== undefined) data.price = Number(price);
+  // Checked against the price the variant will have after this update.
+  if (mrp !== undefined) data.mrp = parseMrp(mrp, price !== undefined ? price : existing.price);
   if (isInStock !== undefined) data.isInStock = isInStock;
   if (sortOrder !== undefined) data.sortOrder = sortOrder;
 
@@ -136,6 +170,14 @@ async function updateVariant(variantId, { label, price, isInStock, sortOrder }) 
 async function deleteVariant(variantId) {
   const existing = await prisma.productVariant.findUnique({ where: { id: variantId } });
   if (!existing) throw notFoundError("Variant not found.");
+
+  // A combo must never silently lose an item.
+  const combos = await combosService.combosUsingVariant(variantId);
+  if (combos.length > 0) {
+    throw validationError(
+      `This weight is inside ${combos.length === 1 ? "the combo" : "the combos"} ${combos.map((c) => `"${c.name}"`).join(", ")}. Take it out of the combo first.`
+    );
+  }
 
   await prisma.productVariant.delete({ where: { id: variantId } });
   return { deletedId: variantId };
@@ -148,72 +190,143 @@ async function toggleVariantStock(variantId, isInStock) {
   return prisma.productVariant.update({ where: { id: variantId }, data: { isInStock } });
 }
 
+// ---------- Image gallery ----------
+
 /**
- * multer's diskStorage already wrote the file to
- * uploads/products/<id>/<timestamp>.<ext> by the time this runs.
- * We just record the path/URL in the DB and clean up the previous file.
+ * Mirrors the gallery's first image onto Product.imageUrl / imagePath.
+ * Listings, the cart and SEO tags only ever read those two fields, so they
+ * keep working without knowing the gallery exists. Must run inside the same
+ * transaction as whatever changed the gallery.
  */
-async function setProductImage(id, file) {
-  const product = await prisma.product.findUnique({
-    where: { id },
-    include: { category: true },
-  });
-  if (!product) {
-    // In disk mode multer has already written the file by the time we get
-    // here, so the controller cleans it up when this throws.
-    throw notFoundError("Product not found.");
-  }
-
-  let storedPath;
-  let imageUrl;
-
-  if (isR2Configured) {
-    // Same folder-per-category shape as local disk, so the two modes stay
-    // readable side by side.
-    const ext = (file.originalname.match(/\.[a-z0-9]+$/i) || [".jpg"])[0].toLowerCase();
-    storedPath = `${product.category.slug}/${slugify(product.name)}-${Date.now()}${ext}`;
-    await uploadToR2(file.buffer, storedPath, file.mimetype);
-    imageUrl = toR2PublicUrl(storedPath);
-  } else {
-    storedPath = path.relative(UPLOADS_DIR, file.path);
-    imageUrl = toPublicUrl(storedPath);
-  }
-
-  const updated = await prisma.product.update({
-    where: { id },
-    data: { imageUrl, imagePath: storedPath },
-    include: productInclude,
+async function syncCoverImage(tx, productId) {
+  const cover = await tx.productImage.findFirst({
+    where: { productId },
+    orderBy: imageOrderBy,
   });
 
-  // Remove the previous image only after the new one is safely stored.
-  if (product.imagePath) {
-    if (isR2Configured) {
-      await deleteFromR2(product.imagePath);
-    } else {
-      deleteLocalImage(product.imagePath);
-    }
-  }
-
-  return updated;
+  await tx.product.update({
+    where: { id: productId },
+    data: { imageUrl: cover ? cover.url : null, imagePath: cover ? cover.path : null },
+  });
 }
 
-async function removeProductImage(id) {
-  const product = await prisma.product.findUnique({ where: { id } });
+/**
+ * Processes each uploaded file (resize + WebP, see imageProcessor.util.js),
+ * saves it under UPLOADS_DIR/<category-slug>/ and appends it to the gallery.
+ * If anything fails part-way, files already written are removed again so no
+ * orphans are left on disk.
+ */
+async function addProductImages(productId, files) {
+  if (!files || files.length === 0) throw validationError("Select at least one image to upload.");
+
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { category: true, _count: { select: { images: true } } },
+  });
   if (!product) throw notFoundError("Product not found.");
 
-  if (product.imagePath) {
-    if (isR2Configured) {
-      await deleteFromR2(product.imagePath);
-    } else {
-      deleteLocalImage(product.imagePath);
-    }
+  const existingCount = product._count.images;
+  if (existingCount + files.length > MAX_IMAGES_PER_PRODUCT) {
+    const remaining = Math.max(MAX_IMAGES_PER_PRODUCT - existingCount, 0);
+    throw validationError(
+      remaining === 0
+        ? `This product already has the maximum of ${MAX_IMAGES_PER_PRODUCT} images. Delete one first.`
+        : `A product can have up to ${MAX_IMAGES_PER_PRODUCT} images. You can add ${remaining} more.`
+    );
   }
 
-  return prisma.product.update({
-    where: { id },
-    data: { imageUrl: null, imagePath: null },
-    include: productInclude,
+  const folder = product.category?.slug || "uncategorized";
+  const baseName = slugify(product.name) || "product";
+  const writtenPaths = [];
+
+  try {
+    const saved = [];
+    // One at a time on purpose: image processing is CPU-heavy, and doing six
+    // in parallel on a small VPS would slow every other request down.
+    for (let i = 0; i < files.length; i += 1) {
+      const { buffer, ext } = await processProductImage(files[i].buffer);
+      const relativePath = `${folder}/${baseName}-${Date.now()}-${i + 1}${ext}`;
+      await writeLocalImage(relativePath, buffer);
+      writtenPaths.push(relativePath);
+      saved.push({ path: relativePath, url: toPublicUrl(relativePath) });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const last = await tx.productImage.findFirst({
+        where: { productId },
+        orderBy: [{ sortOrder: "desc" }, { id: "desc" }],
+      });
+      const startAt = last ? last.sortOrder + 1 : 0;
+
+      await tx.productImage.createMany({
+        data: saved.map((img, index) => ({
+          productId,
+          path: img.path,
+          url: img.url,
+          sortOrder: startAt + index,
+        })),
+      });
+
+      await syncCoverImage(tx, productId);
+    });
+  } catch (err) {
+    writtenPaths.forEach((p) => deleteLocalImage(p));
+    throw err;
+  }
+
+  return getProductById(productId);
+}
+
+/**
+ * Sets the gallery order. imageIds must list every image of the product
+ * exactly once; the first one becomes the cover.
+ */
+async function reorderProductImages(productId, imageIds) {
+  const product = await prisma.product.findUnique({
+    where: { id: productId },
+    include: { images: { select: { id: true } } },
   });
+  if (!product) throw notFoundError("Product not found.");
+
+  const currentIds = product.images.map((img) => img.id).sort((a, b) => a - b);
+  const requestedIds = [...imageIds].sort((a, b) => a - b);
+  const sameSet =
+    currentIds.length === requestedIds.length && currentIds.every((id, i) => id === requestedIds[i]);
+  if (!sameSet) {
+    throw validationError("The image list is out of date. Refresh the page and try again.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (let i = 0; i < imageIds.length; i += 1) {
+      await tx.productImage.update({ where: { id: imageIds[i] }, data: { sortOrder: i } });
+    }
+    await syncCoverImage(tx, productId);
+  });
+
+  return getProductById(productId);
+}
+
+/**
+ * Removes one image. The DB row goes first (and the cover is re-synced in
+ * the same transaction); the file is deleted from disk only after that
+ * commits, so a failure can never leave the shop pointing at a missing file.
+ */
+async function deleteProductImage(imageId) {
+  const image = await prisma.productImage.findUnique({ where: { id: imageId } });
+  if (!image) throw notFoundError("Image not found.");
+
+  await prisma.$transaction(async (tx) => {
+    await tx.productImage.delete({ where: { id: imageId } });
+    await syncCoverImage(tx, image.productId);
+  });
+
+  if (image.path) {
+    // Only remove the file if no other gallery row still points at it.
+    const stillUsed = await prisma.productImage.count({ where: { path: image.path } });
+    if (stillUsed === 0) deleteLocalImage(image.path);
+  }
+
+  return getProductById(image.productId);
 }
 
 /** Product-level availability - pulls the whole item for the day in one click. */
@@ -229,6 +342,7 @@ async function toggleProductStock(id, isInStock) {
 async function addOptionGroup(productId, { name, isRequired, allowMultiple, sortOrder }) {
   const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product) throw notFoundError("Product not found.");
+  if (product.isCombo) throw validationError("Combos don't have options - the items inside come as listed.");
 
   return prisma.productOptionGroup.create({
     data: {
@@ -313,8 +427,9 @@ module.exports = {
   updateVariant,
   deleteVariant,
   toggleVariantStock,
-  setProductImage,
-  removeProductImage,
+  addProductImages,
+  reorderProductImages,
+  deleteProductImage,
   toggleProductStock,
   addOptionGroup,
   updateOptionGroup,
@@ -322,4 +437,5 @@ module.exports = {
   addOption,
   updateOption,
   deleteOption,
+  MAX_IMAGES_PER_PRODUCT,
 };

@@ -1,6 +1,10 @@
 const categoriesService = require("../../services/categories/categories.service");
 const productsService = require("../../services/products/products.service");
 const ordersService = require("../../services/orders/orders.service");
+const couponsService = require("../../services/coupons/coupons.service");
+const merchService = require("../../services/merch/merch.service");
+const combosService = require("../../services/combos/combos.service");
+const recipesService = require("../../services/recipes/recipes.service");
 const razorpayService = require("../../services/payments/razorpay.service");
 const {
   validatePublicCreateOrder,
@@ -34,7 +38,10 @@ async function listProducts(req, res, next) {
       inStockOnly: true,
       search: req.query.search,
     });
-    return success(res, 200, "Products fetched.", { products });
+    // Only tags live right now, plus the automatic "Bestseller" label.
+    // Combos with something unavailable inside drop out of the list, like a pulled item.
+    const visible = combosService.toPublic(products, { hideUnavailable: true });
+    return success(res, 200, "Products fetched.", { products: await merchService.decorateProducts(visible) });
   } catch (err) {
     return next(err);
   }
@@ -46,7 +53,10 @@ async function getProduct(req, res, next) {
     if (!product.isActive || !product.isInStock) {
       return failure(res, 404, "Product not found.");
     }
-    return success(res, 200, "Product fetched.", { product });
+    const [decorated] = await merchService.decorateProducts(combosService.toPublic([product]));
+    // Published recipes that use this product ("Is se banao").
+    decorated.recipes = await recipesService.recipesForProduct(product.id).catch(() => []);
+    return success(res, 200, "Product fetched.", { product: decorated });
   } catch (err) {
     if (err.expose) return failure(res, err.statusCode, err.message);
     return next(err);
@@ -81,6 +91,9 @@ async function createOrder(req, res, next) {
             deliveryPersonName: order.deliveryPersonName,
             subtotal: order.subtotal,
             deliveryCharge: order.deliveryCharge,
+            discount: order.discount,
+            couponCode: order.couponCode,
+            freeDelivery: order.freeDelivery,
             total: order.total,
             status: order.status,
             items: order.items,
@@ -117,6 +130,9 @@ async function verifyRazorpayPayment(req, res, next) {
         deliveryPersonName: order.deliveryPersonName,
         subtotal: order.subtotal,
         deliveryCharge: order.deliveryCharge,
+        discount: order.discount,
+        couponCode: order.couponCode,
+        freeDelivery: order.freeDelivery,
         total: order.total,
         status: order.status,
         items: order.items,
@@ -188,6 +204,9 @@ async function trackOrder(req, res, next) {
         deliveryPersonName: order.deliveryPersonName,
         subtotal: order.subtotal,
         deliveryCharge: order.deliveryCharge,
+        discount: order.discount,
+        couponCode: order.couponCode,
+        freeDelivery: order.freeDelivery,
         total: order.total,
         createdAt: order.createdAt,
         items: order.items,
@@ -216,6 +235,9 @@ function toCustomerOrderView(order) {
     deliveryPersonName: order.deliveryPersonName,
     subtotal: order.subtotal,
     deliveryCharge: order.deliveryCharge,
+    discount: order.discount,
+    couponCode: order.couponCode,
+    freeDelivery: order.freeDelivery,
     total: order.total,
     createdAt: order.createdAt,
     items: order.items,
@@ -245,7 +267,49 @@ async function myOrderDetail(req, res, next) {
   }
 }
 
+/** Coupons marked "show on site" that work right now - the cart's "Available offers". */
+async function listCoupons(req, res, next) {
+  try {
+    const coupons = await couponsService.listPublicCoupons();
+    return success(res, 200, "Coupons fetched.", { coupons });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/**
+ * Checks a code against the cart and returns what it would save. Nothing is
+ * reserved; the order itself checks again. Signed-in customers' phone numbers
+ * are used for "once per customer" / "first order" rules automatically.
+ */
+async function applyCoupon(req, res, next) {
+  try {
+    const { code, items, customerPhone } = req.body || {};
+    if (typeof code !== "string" || !code.trim() || code.trim().length > 30) {
+      return failure(res, 422, "Enter a coupon code.");
+    }
+    const validItems =
+      Array.isArray(items) &&
+      items.length > 0 &&
+      items.length <= 100 &&
+      items.every((i) => Number.isInteger(i?.productVariantId) && Number.isInteger(i?.quantity) && i.quantity > 0);
+    if (!validItems) return failure(res, 422, "Your cart is empty.");
+
+    const preview = await ordersService.previewCoupon({
+      code,
+      items,
+      customerPhone: req.customer?.phone || (typeof customerPhone === "string" ? customerPhone : undefined),
+    });
+    return success(res, 200, `Coupon applied - you save ₹${Math.round(preview.savings)}.`, { coupon: preview });
+  } catch (err) {
+    if (err.expose) return failure(res, err.statusCode, err.message);
+    return next(err);
+  }
+}
+
 module.exports = {
+  listCoupons,
+  applyCoupon,
   listCategories,
   listProducts,
   getProduct,

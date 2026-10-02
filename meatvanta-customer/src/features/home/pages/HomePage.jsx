@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchCategories, fetchProducts } from "../../shop/api/shopApi";
-import CategoryCard from "../components/CategoryCard";
+import CategorySlider from "../components/CategorySlider";
 import { productImage } from "../../../lib/images";
 import BannerSlot from "../../banners/components/BannerSlot";
 import { useRecipes } from "../../recipes/useRecipes";
-import { useMediaQuery } from "../../../hooks/useMediaQuery";
 import RecipeCard from "../../recipes/components/RecipeCard";
 import ProductBadges from "../../../components/product/ProductBadges";
 import PriceLine from "../../../components/product/PriceLine";
@@ -17,24 +16,6 @@ const TRUST_STRIP = [
   { icon: "verified", title: "Halal Certified", text: "As per Islamic guidelines" },
   { icon: "verified_user", title: "Premium Quality", text: "For your family's health" },
 ];
-
-// The two categories that have hand-made banner art. Every other category
-// (added later in admin) gets a generic CategoryCard instead - its own photo
-// if one was uploaded, otherwise a plain red card.
-const CATEGORY_BANNERS = {
-  chicken: {
-    title: "Chicken",
-    subtitle: "Fresh & Juicy",
-    desktopImg: "/category-chicken-desktop.webp",
-    mobileImg: "/category-chicken-mobile.webp",
-  },
-  mutton: {
-    title: "Mutton",
-    subtitle: "Tender & Flavorful",
-    desktopImg: "/category-mutton-desktop.webp",
-    mobileImg: "/category-mutton-mobile.webp",
-  },
-};
 
 const WHY_TRUST = [
   { icon: "eco", title: "100% Fresh", sub: "& Natural", filled: true },
@@ -52,8 +33,6 @@ export default function HomePage() {
   const [categories, setCategories] = useState([]);
   const [bestSellers, setBestSellers] = useState([]);
   const { recipes } = useRecipes();
-  // sm breakpoint: only the category picture that is showing gets downloaded.
-  const isSmUp = useMediaQuery("(min-width: 640px)");
 
   useEffect(() => {
     fetchCategories().then(setCategories).catch(() => setCategories([]));
@@ -62,13 +41,6 @@ export default function HomePage() {
       .catch(() => setBestSellers([]));
   }, []);
 
-  // Everything the shop has, in admin order. If the list could not load, fall
-  // back to the two original banners so the section is never empty.
-  const homeCategories =
-    categories.length > 0
-      ? categories
-      : Object.keys(CATEGORY_BANNERS).map((slug) => ({ slug, id: slug, name: CATEGORY_BANNERS[slug].title }));
-  const isOdd = homeCategories.length > 1 && homeCategories.length % 2 === 1;
 
   return (
     <div className="overflow-hidden">
@@ -193,101 +165,20 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* SHOP BY CATEGORY */}
-      <section className="page-x py-14 md:py-section">
-        <div className="text-center mb-10">
-          <div className="flex items-center justify-center gap-3 text-accent text-xs font-bold uppercase tracking-[0.2em] mb-2">
-            <span className="w-8 h-px bg-accent" /> Shop by Category <span className="w-8 h-px bg-accent" />
+      {/* SHOP BY CATEGORY - every active category from admin, in a slider.
+          Nothing renders until there is at least one. */}
+      {categories.length > 0 && (
+        <section className="page-x py-14 md:py-section">
+          <div className="text-center mb-8 md:mb-10">
+            <div className="flex items-center justify-center gap-3 text-accent text-xs font-bold uppercase tracking-[0.2em] mb-2">
+              <span className="w-8 h-px bg-accent" /> Shop by Category <span className="w-8 h-px bg-accent" />
+            </div>
+            <h2 className="font-display text-headline-lg text-brand">Choose Your Meat</h2>
           </div>
-          <h2 className="font-display text-headline-lg text-brand">Choose Your Meat</h2>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {homeCategories.map((category, position) => {
-            const banner = CATEGORY_BANNERS[category.slug];
-            // An odd last card sits centred under the pair above it.
-            const lastOdd =
-              isOdd && position === homeCategories.length - 1
-                ? "sm:col-span-2 sm:w-[calc(50%-0.625rem)] sm:mx-auto"
-                : "";
-            if (!banner) {
-              return (
-                <div key={category.id} className={lastOdd}>
-                  <CategoryCard category={category} />
-                </div>
-              );
-            }
-            return (
-              <Link key={category.id} to={`/shop?category=${category.id}`} className={`group block ${lastOdd}`}>
-                {/* Desktop / tablet. The icon (baked into the photo) sits in
-                    the upper-right of the red zone - measured at roughly
-                    x 72-87%, y 10-55% of the image. Text is pinned to that
-                    same right-hand column only (not centered across the
-                    whole card, which is what put it on top of the photo
-                    before) and starts right below where the icon ends.
-                    Default state shows just the name under the icon; the
-                    subtitle and Shop Now button fade in on hover, staying
-                    layered on the image itself rather than a caption below it. */}
-                <div className="hidden sm:block relative rounded-lg overflow-hidden aspect-[1983/793]">
-                  <img
-                    src={isSmUp ? banner.desktopImg : undefined}
-            loading="lazy"
-            decoding="async"
-                    alt={`${banner.title} — ${banner.subtitle}`}
-                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
-                  />
-                  <div className="absolute left-[54%] right-[3%] top-[55%] flex flex-col items-center text-center text-white">
-                    <p className="font-display text-[clamp(1.1rem,2.6vw,1.75rem)] font-bold drop-shadow">
-                      {banner.title}
-                    </p>
-                    <div className="grid grid-rows-[0fr] group-hover:grid-rows-[1fr] transition-all duration-300 ease-out w-full">
-                      <div className="overflow-hidden flex flex-col items-center pb-4">
-                        <p className="text-white/85 text-[clamp(0.65rem,1.1vw,0.9rem)] mt-1 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          {banner.subtitle}
-                        </p>
-                        <span className="inline-flex items-center gap-1 bg-accent text-ink text-[clamp(0.6rem,1vw,0.8rem)] font-bold px-4 py-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          Shop Now
-                          <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Mobile. Same overlay pattern as desktop - name always
-                    visible, subtitle + Shop Now reveal on tap/hover - but
-                    the icon here fills nearly the whole red zone (measured
-                    at roughly y 66-92%), leaving only a slim strip at the
-                    very bottom to work with, so everything is sized down
-                    to fit inside that without spilling past the image. */}
-                <div className="sm:hidden relative rounded-lg overflow-hidden aspect-[1024/1536]">
-                  <img
-                    src={isSmUp ? undefined : banner.mobileImg}
-            loading="lazy"
-            decoding="async"
-                    alt={`${banner.title} — ${banner.subtitle}`}
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-x-0 bottom-[4%] flex flex-col items-center text-center text-white px-4">
-                    <p className="font-display text-base font-bold drop-shadow">{banner.title}</p>
-                    <div className="grid grid-rows-[0fr] group-hover:grid-rows-[1fr] transition-all duration-300 ease-out w-full">
-                      <div className="overflow-hidden flex flex-col items-center">
-                        <p className="text-white/85 text-[11px] mt-0.5 mb-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          {banner.subtitle}
-                        </p>
-                        <span className="inline-flex items-center gap-1 bg-accent text-ink text-[10px] font-bold px-3 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                          Shop Now
-                          <span className="material-symbols-outlined text-xs">arrow_forward</span>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
+          <CategorySlider categories={categories} />
+        </section>
+      )}
 
       {/* OFFERS - after categories */}
       <BannerSlot placement="home_middle" className="pb-14 md:pb-16" label="Offers" />

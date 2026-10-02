@@ -43,7 +43,7 @@ export default function CategoryCard({ category }) {
               decoding="async"
               className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
             />
-            <div className="absolute left-[54%] right-[3%] bottom-[9%] flex justify-center opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-300">
+            <div className="absolute left-[54%] right-[3%] top-[64%] flex justify-center opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity duration-300">
               <ShopNowButton className="text-[clamp(0.65rem,1vw,0.85rem)] px-5 py-2" />
             </div>
           </div>
@@ -51,8 +51,14 @@ export default function CategoryCard({ category }) {
           {/* Phone */}
           <div className={`sm:hidden relative ${mobileShape} overflow-hidden`}>
             <img src={mobileImg} alt={category.name} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />
-            <div className="absolute inset-x-0 bottom-[5%] flex justify-center">
-              <ShopNowButton className="text-xs px-4 py-1.5" />
+            {/* Wide picture: button sits under the title, in the red panel.
+                Tall phone picture: button sits near the bottom. */}
+            <div
+              className={`absolute flex justify-center ${
+                category.mobileImageUrl ? "inset-x-0 bottom-[5%]" : "left-[54%] right-[3%] top-[64%]"
+              }`}
+            >
+              <ShopNowButton className="text-[11px] px-3.5 py-1.5" />
             </div>
           </div>
         </>

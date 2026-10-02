@@ -40,4 +40,23 @@ async function markAllRead(req, res, next) {
   }
 }
 
-module.exports = { list, unreadCount, markRead, markAllRead };
+async function pendingOrders(req, res, next) {
+  try {
+    const alerts = await notificationsService.listPendingOrderAlerts();
+    return success(res, 200, "Pending order alerts fetched.", { alerts });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function acknowledgeOrder(req, res, next) {
+  try {
+    const notification = await notificationsService.acknowledgeOrderAlert(Number(req.params.id));
+    return success(res, 200, "Order alert acknowledged.", { notification });
+  } catch (err) {
+    if (err.expose) return failure(res, err.statusCode, err.message);
+    return next(err);
+  }
+}
+
+module.exports = { pendingOrders, acknowledgeOrder, list, unreadCount, markRead, markAllRead };

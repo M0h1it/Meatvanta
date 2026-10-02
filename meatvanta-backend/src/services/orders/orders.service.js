@@ -6,6 +6,7 @@ const razorpayService = require("../payments/razorpay.service");
 const ist = require("../../utils/istDate.util");
 const couponsService = require("../coupons/coupons.service");
 const combosService = require("../combos/combos.service");
+const newCustomerOffer = require("../newCustomerOffer/newCustomerOffer.service");
 
 function notFoundError(message) {
   const err = new Error(message);
@@ -323,20 +324,27 @@ async function priceCheckoutItems(items) {
 }
 
 /**
- * Coupon preview for the cart/checkout page ("You save ₹120"). Nothing is
- * reserved - the same check runs again, for real, when the order is placed.
+ * What the cart / checkout page shows ("You save ₹120"). Nothing is reserved -
+ * the same check runs again, for real, when the order is placed.
+ *
+ * `code` is optional (a first-time customer can get the welcome offer with no
+ * coupon). `paymentMethod` ("cod" | "razorpay") decides whether the welcome
+ * offer counts; without it only the coupon is evaluated. Either way the
+ * customer gets ONE saving: whichever of coupon / welcome offer is bigger.
  */
-async function previewCoupon({ code, items, customerPhone }) {
+async function previewCheckout({ code, items, customerPhone, paymentMethod }) {
   const settings = await deliverySettingsService.getSettings();
   const { lines } = await priceCheckoutItems(items);
   const subtotal = lines.reduce((s, l) => s + l.lineTotal, 0);
   const isFlatCharge = settings.deliveryChargeMode === "flat";
   const deliveryCharge = isFlatCharge ? Number(settings.flatDeliveryCharge) : 0;
 
-  const applied = await applyCouponToCheckout({ couponCode: code, lines, subtotal, deliveryCharge, customerPhone });
+  const applied = await applyBestOffer({ couponCode: code, lines, subtotal, deliveryCharge, customerPhone, paymentMethod });
+  const info = applied.welcomeInfo;
   return {
-    code: applied.coupon.code,
-    summary: applied.summary,
+    code: applied.coupon ? applied.coupon.code : applied.welcome ? newCustomerOffer.WELCOME_CODE : null,
+    kind: applied.coupon ? "coupon" : applied.welcome ? "welcome" : null,
+    summary: applied.summary || null,
     freeDelivery: applied.freeDelivery,
     discount: applied.discount,
     // What the customer saves in total (items + waived delivery).
@@ -345,7 +353,26 @@ async function previewCoupon({ code, items, customerPhone }) {
     deliveryCharge: applied.deliveryCharge,
     deliveryChargeMode: settings.deliveryChargeMode,
     total: subtotal + applied.deliveryCharge - applied.discount,
+    // Set when the welcome offer saved more than the typed coupon, so the
+    // coupon was left unused: the page tells the customer.
+    supersededCoupon: applied.supersededCoupon || null,
+    welcome: info
+      ? {
+          percent: info.percent,
+          headline: info.headline,
+          methods: info.methods,
+          minOrderValue: info.minOrderValue,
+          maxDiscount: info.maxDiscount,
+          discountByMethod: { razorpay: info.byMethod.razorpay.discount, cod: info.byMethod.cod.discount },
+          shortByMethod: { razorpay: info.byMethod.razorpay.short, cod: info.byMethod.cod.short },
+        }
+      : null,
   };
+}
+
+/** Older callers (POST /coupons/apply): a coupon-only preview. */
+async function previewCoupon({ code, items, customerPhone }) {
+  return previewCheckout({ code, items, customerPhone });
 }
 
 /**
@@ -363,6 +390,36 @@ async function applyCouponToCheckout({ couponCode, lines, subtotal, deliveryChar
   }
   const discount = Math.min(result.discount, subtotal);
   return { coupon: result.coupon, summary: result.summary, discount, deliveryCharge, freeDelivery: false, savings: discount };
+}
+
+/**
+ * One saving per order. Evaluates the coupon (if a code was typed - an invalid
+ * code still throws, as before) and the new-customer welcome offer for this
+ * payment method, and keeps whichever saves the customer more. When the welcome
+ * offer wins the coupon is NOT applied or redeemed, so it isn't wasted.
+ * A tie goes to the coupon the customer chose.
+ */
+async function applyBestOffer({ couponCode, lines, subtotal, deliveryCharge, customerPhone, paymentMethod }) {
+  const couponResult = await applyCouponToCheckout({ couponCode, lines, subtotal, deliveryCharge, customerPhone });
+
+  const info = await newCustomerOffer.describeFor({ subtotal, customerPhone });
+  const methodKey = paymentMethod === "cod" ? "cod" : paymentMethod === "razorpay" ? "razorpay" : null;
+  const welcomeDiscount = info && methodKey ? info.byMethod[methodKey].discount : 0;
+
+  if (welcomeDiscount > 0 && welcomeDiscount > couponResult.savings) {
+    return {
+      coupon: null,
+      welcome: true,
+      summary: `Welcome offer - ${info.percent}% off your first order`,
+      discount: welcomeDiscount,
+      deliveryCharge, // untouched: a free-delivery coupon is not applied either
+      freeDelivery: false,
+      savings: welcomeDiscount,
+      supersededCoupon: couponResult.coupon ? couponResult.coupon.code : null,
+      welcomeInfo: info,
+    };
+  }
+  return { ...couponResult, welcome: false, supersededCoupon: null, welcomeInfo: info };
 }
 
 /** Alerts the shop that a real, paid-for (or COD) order came in. Deliberately
@@ -422,19 +479,23 @@ async function createPublicOrder(payload, customerId = null) {
 
   // Coupon is re-checked here from the priced cart - the preview the customer
   // saw earlier is never trusted.
-  const applied = await applyCouponToCheckout({
+  const applied = await applyBestOffer({
     couponCode,
     lines,
     subtotal,
     deliveryCharge: baseDeliveryCharge,
     customerPhone,
+    paymentMethod,
   });
   const deliveryCharge = applied.deliveryCharge;
   const discount = applied.discount;
   const total = subtotal + deliveryCharge - discount;
+  // A welcome offer has no coupon row - only its label is saved on the order.
   const couponFields = applied.coupon
     ? { couponId: applied.coupon.id, couponCode: applied.coupon.code, freeDelivery: applied.freeDelivery }
-    : {};
+    : applied.welcome
+      ? { couponCode: newCustomerOffer.WELCOME_CODE }
+      : {};
 
   if (paymentMethod === "cod") {
     const order = await prisma.$transaction(async (tx) => {
@@ -512,7 +573,7 @@ async function createPublicOrder(payload, customerId = null) {
         total,
         isFlatCharge,
         couponId: applied.coupon ? applied.coupon.id : null,
-        couponCode: applied.coupon ? applied.coupon.code : null,
+        couponCode: applied.coupon ? applied.coupon.code : applied.welcome ? newCustomerOffer.WELCOME_CODE : null,
         freeDelivery: applied.freeDelivery,
         couponSavings: applied.savings,
         deliveryStartTime: settings.deliveryStartTime,
@@ -753,6 +814,7 @@ module.exports = {
   updateOrderStatus,
   cancelOrder,
   previewCoupon,
+  previewCheckout,
   getDashboardStats,
   createPublicOrder,
   getOrderForTracking,

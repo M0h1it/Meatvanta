@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchCategories, fetchProducts } from "../../shop/api/shopApi";
+import CategoryCard from "../components/CategoryCard";
 import { productImage } from "../../../lib/images";
 import BannerSlot from "../../banners/components/BannerSlot";
 import { useRecipes } from "../../recipes/useRecipes";
@@ -17,9 +18,9 @@ const TRUST_STRIP = [
   { icon: "verified_user", title: "Premium Quality", text: "For your family's health" },
 ];
 
-// Only the two categories this design has banner art for. Other categories
-// the shop may have (e.g. "Special Items") still show up in the regular
-// Shop page and nav - just not as one of these two hero banners.
+// The two categories that have hand-made banner art. Every other category
+// (added later in admin) gets a generic CategoryCard instead - its own photo
+// if one was uploaded, otherwise a plain red card.
 const CATEGORY_BANNERS = {
   chicken: {
     title: "Chicken",
@@ -61,7 +62,13 @@ export default function HomePage() {
       .catch(() => setBestSellers([]));
   }, []);
 
-  const bannerCategories = categories.filter((c) => CATEGORY_BANNERS[c.slug]);
+  // Everything the shop has, in admin order. If the list could not load, fall
+  // back to the two original banners so the section is never empty.
+  const homeCategories =
+    categories.length > 0
+      ? categories
+      : Object.keys(CATEGORY_BANNERS).map((slug) => ({ slug, id: slug, name: CATEGORY_BANNERS[slug].title }));
+  const isOdd = homeCategories.length > 1 && homeCategories.length % 2 === 1;
 
   return (
     <div className="overflow-hidden">
@@ -196,14 +203,22 @@ export default function HomePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-          {(bannerCategories.length > 0
-            ? bannerCategories
-            : Object.keys(CATEGORY_BANNERS).map((slug) => ({ slug, id: slug, name: CATEGORY_BANNERS[slug].title }))
-          ).map((category) => {
+          {homeCategories.map((category, position) => {
             const banner = CATEGORY_BANNERS[category.slug];
-            if (!banner) return null;
+            // An odd last card sits centred under the pair above it.
+            const lastOdd =
+              isOdd && position === homeCategories.length - 1
+                ? "sm:col-span-2 sm:w-[calc(50%-0.625rem)] sm:mx-auto"
+                : "";
+            if (!banner) {
+              return (
+                <div key={category.id} className={lastOdd}>
+                  <CategoryCard category={category} />
+                </div>
+              );
+            }
             return (
-              <Link key={category.id} to={`/shop?category=${category.id}`} className="group block">
+              <Link key={category.id} to={`/shop?category=${category.id}`} className={`group block ${lastOdd}`}>
                 {/* Desktop / tablet. The icon (baked into the photo) sits in
                     the upper-right of the red zone - measured at roughly
                     x 72-87%, y 10-55% of the image. Text is pinned to that
@@ -221,12 +236,12 @@ export default function HomePage() {
                     alt={`${banner.title} — ${banner.subtitle}`}
                     className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-500"
                   />
-                  <div className="absolute left-[54%] right-[3%] top-[58%] flex flex-col items-center text-center text-white">
+                  <div className="absolute left-[54%] right-[3%] top-[55%] flex flex-col items-center text-center text-white">
                     <p className="font-display text-[clamp(1.1rem,2.6vw,1.75rem)] font-bold drop-shadow">
                       {banner.title}
                     </p>
                     <div className="grid grid-rows-[0fr] group-hover:grid-rows-[1fr] transition-all duration-300 ease-out w-full">
-                      <div className="overflow-hidden flex flex-col items-center">
+                      <div className="overflow-hidden flex flex-col items-center pb-4">
                         <p className="text-white/85 text-[clamp(0.65rem,1.1vw,0.9rem)] mt-1 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                           {banner.subtitle}
                         </p>
@@ -253,7 +268,7 @@ export default function HomePage() {
                     alt={`${banner.title} — ${banner.subtitle}`}
                     className="absolute inset-0 w-full h-full object-cover"
                   />
-                  <div className="absolute inset-x-0 bottom-[2%] flex flex-col items-center text-center text-white px-4">
+                  <div className="absolute inset-x-0 bottom-[4%] flex flex-col items-center text-center text-white px-4">
                     <p className="font-display text-base font-bold drop-shadow">{banner.title}</p>
                     <div className="grid grid-rows-[0fr] group-hover:grid-rows-[1fr] transition-all duration-300 ease-out w-full">
                       <div className="overflow-hidden flex flex-col items-center">
@@ -324,7 +339,7 @@ export default function HomePage() {
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
             {bestSellers.map((product) => (
-              <div key={product.id} className="bg-white rounded border border-hairline overflow-hidden">
+              <div key={product.id} className="bg-white rounded border border-hairline overflow-hidden flex flex-col h-full">
                 <Link to={`/product/${product.id}`} className="block relative aspect-square overflow-hidden bg-surface-alt group">
                   <img
                     src={productImage(product)}
@@ -333,13 +348,13 @@ export default function HomePage() {
                   />
                   <ProductBadges product={product} className="absolute top-3 left-3 right-3" />
                 </Link>
-                <div className="p-4">
+                <div className="p-4 flex-1 flex flex-col">
                   <Link to={`/product/${product.id}`}>
-                    <h3 className="font-semibold text-ink text-sm hover:text-brand-dark transition-colors">
+                    <h3 className="font-semibold text-ink text-sm hover:text-brand-dark transition-colors line-clamp-2 min-h-[2.5rem]">
                       {product.name}
                     </h3>
                   </Link>
-                  <PriceLine product={product} className="mt-0.5 mb-3" />
+                  <PriceLine product={product} className="mt-0.5 mb-3 mt-auto" />
                   <Link
                     to={`/product/${product.id}`}
                     className="flex items-center justify-center gap-1.5 w-full bg-brand text-white text-sm font-bold py-2 rounded-full hover:bg-brand-dark transition-colors"

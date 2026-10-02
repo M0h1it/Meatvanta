@@ -121,6 +121,12 @@ export default function ProductDetailPage() {
     });
   }
 
+  const addLabel = justAdded
+    ? "Added ✓"
+    : missingRequiredGroup
+    ? `Choose ${missingRequiredGroup.name}`
+    : "Add to Cart";
+
   function handleAddToCart() {
     if (!selectedVariant || missingRequiredGroup) return;
     addItem(product, selectedVariant, quantity, chosenOptions);
@@ -139,10 +145,10 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <div className="pb-28">
-      <div className="page-x py-6 md:py-10">
+    <div className="pb-20 md:pb-0">
+      <div className="page-x py-4 md:py-6">
         {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb" className="text-[11px] font-semibold uppercase tracking-wide text-ink/50 mb-5">
+        <nav aria-label="Breadcrumb" className="text-[11px] font-semibold uppercase tracking-wide text-ink/50 mb-4">
           <Link to="/" className="hover:text-brand">Home</Link>
           <span className="mx-2">/</span>
           <Link to={`/shop?category=${product.categoryId}`} className="hover:text-brand">
@@ -152,7 +158,7 @@ export default function ProductDetailPage() {
           <span className="text-ink">{product.name}</span>
         </nav>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12">
+        <div className="grid grid-cols-1 md:grid-cols-[auto_minmax(0,1fr)] gap-6 lg:gap-10">
           {/* Images */}
           <ProductGallery
             images={product.images}
@@ -168,24 +174,36 @@ export default function ProductDetailPage() {
             <h1 className="font-display text-headline-lg text-ink mb-3">{product.name}</h1>
             <ProductBadges product={product} max={10} size="lg" withCountdown className="mb-3" />
 
-            <span className="inline-flex items-center gap-1.5 bg-accent-soft/50 border border-accent/30 text-ink text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-full mb-4">
+            {selectedVariant && (
+              <p className="mb-3 flex items-baseline gap-2 flex-wrap">
+                <span className="font-display text-3xl font-bold text-ink">₹{total.toFixed(0)}</span>
+                {variantDiscountPct(selectedVariant) !== null && (
+                  <span className="text-base text-ink/40 line-through">
+                    ₹{((Number(selectedVariant.mrp) + optionsTotal) * quantity).toFixed(0)}
+                  </span>
+                )}
+                {optionsTotal > 0 && <span className="text-xs text-ink/50">includes ₹{optionsTotal} options</span>}
+              </p>
+            )}
+
+            <span className="inline-flex items-center gap-1.5 bg-accent-soft/50 border border-accent/30 text-ink text-[11px] font-bold uppercase tracking-wide px-3 py-1.5 rounded-full mb-3">
               <span className="material-symbols-outlined text-sm text-accent">verified</span>
               Fresh Today
             </span>
 
-            <CouponHint product={product} className="mb-5" />
+            <CouponHint product={product} className="mb-3" />
 
-            <ComboContents product={product} className="mb-6" />
+            <ComboContents product={product} className="mb-4" />
 
             {product.description && (
-              <p className="text-ink/70 leading-relaxed mb-6 pb-6 border-b border-hairline">
+              <p className="text-ink/70 leading-relaxed text-sm md:text-[15px] mb-4 pb-4 border-b border-hairline">
                 {product.description}
               </p>
             )}
 
             {/* Weight */}
-            <div className="mb-6">
-              <h2 className="font-display text-lg font-bold text-ink mb-3">{product.combo ? "Pack" : "Select Weight"}</h2>
+            <div className="mb-4">
+              <h2 className="font-display text-lg font-bold text-ink mb-2">{product.combo ? "Pack" : "Select Weight"}</h2>
               <div className="flex flex-wrap gap-2.5">
                 {product.variants.map((variant) => {
                   const isSelected = variant.id === selectedVariantId;
@@ -222,7 +240,7 @@ export default function ProductDetailPage() {
 
             {/* Option groups */}
             {optionGroups.map((group) => (
-              <div key={group.id} className="mb-6">
+              <div key={group.id} className="mb-4">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-display text-lg font-bold text-ink">{group.name}</h2>
                   <span className={`text-xs font-semibold ${group.isRequired ? "text-brand" : "text-ink/50"}`}>
@@ -257,9 +275,8 @@ export default function ProductDetailPage() {
             ))}
 
             {hasAnyStock ? (
-              <div className="flex items-center gap-5 mb-6">
-                <h2 className="font-display text-lg font-bold text-ink">Quantity</h2>
-                <div className="flex items-center border border-hairline rounded-sm bg-white">
+              <div className="flex flex-wrap items-center gap-3 mb-2">
+                <div className="flex items-center border border-hairline rounded-full bg-white">
                   <button
                     onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                     className="w-10 h-10 flex items-center justify-center text-ink hover:text-brand"
@@ -267,7 +284,7 @@ export default function ProductDetailPage() {
                   >
                     <span className="material-symbols-outlined text-lg">remove</span>
                   </button>
-                  <span className="w-10 text-center font-bold text-ink">{quantity}</span>
+                  <span className="w-8 text-center font-bold text-ink" aria-label="Quantity">{quantity}</span>
                   <button
                     onClick={() => setQuantity((q) => q + 1)}
                     className="w-10 h-10 flex items-center justify-center text-ink hover:text-brand"
@@ -276,9 +293,31 @@ export default function ProductDetailPage() {
                     <span className="material-symbols-outlined text-lg">add</span>
                   </button>
                 </div>
+
+                {/* Laptop / tablet: buttons sit right beside the quantity. */}
+                <button
+                  onClick={handleAddToCart}
+                  disabled={!selectedVariant || !!missingRequiredGroup}
+                  className="hidden md:flex items-center justify-center gap-2 border-2 border-brand text-brand font-semibold px-5 h-10 rounded-full hover:bg-brand/5 transition-colors disabled:opacity-40 text-sm"
+                >
+                  <span className="material-symbols-outlined text-lg">shopping_cart</span>
+                  {addLabel}
+                </button>
+                <button
+                  onClick={handleBuyNow}
+                  disabled={!selectedVariant || !!missingRequiredGroup}
+                  className="hidden md:flex items-center justify-center bg-brand text-white font-semibold px-7 h-10 rounded-full hover:bg-brand-dark transition-colors disabled:opacity-40 text-sm"
+                >
+                  Buy Now
+                </button>
+                {justAdded && (
+                  <Link to="/cart" className="hidden md:inline text-sm font-semibold text-brand underline">
+                    Go to cart
+                  </Link>
+                )}
               </div>
             ) : (
-              <div className="bg-white border border-hairline rounded p-4 text-sm text-ink/70 mb-6">
+              <div className="bg-white border border-hairline rounded p-4 text-sm text-ink/70 mb-4">
                 This item isn't available today. Please check back tomorrow morning.
               </div>
             )}
@@ -286,58 +325,27 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {/* Fixed bottom bar - deliberately `fixed`, not `sticky`. On a short
-          page (little description, one variant row), `sticky bottom-0`
-          can end up overlapping the content right above it before you've
-          even scrolled, because the page is shorter than the viewport.
-          `fixed` always pins to the viewport with no ambiguity, and the
-          pb-28 on the page's outer wrapper keeps real content from ever
-          sliding underneath it. */}
+      {/* Phones only: a slim bar so the buttons stay in reach while scrolling.
+          On laptops the buttons sit beside the quantity instead (no strip). */}
       {hasAnyStock && (
-        <div className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-hairline shadow-[0_-2px_12px_rgba(26,26,26,0.08)]">
-          <div className="page-x py-3 md:py-4 flex items-center justify-between gap-3 md:gap-4">
-            <div className="shrink-0">
-              <p className="font-display text-xl md:text-3xl font-bold text-ink">
-                ₹{total.toFixed(0)}
-                {selectedVariant && variantDiscountPct(selectedVariant) !== null && (
-                  <span className="ml-2 font-sans text-sm md:text-base font-normal text-ink/40 line-through">
-                    ₹{((Number(selectedVariant.mrp) + optionsTotal) * quantity).toFixed(0)}
-                  </span>
-                )}
-              </p>
-              {optionsTotal > 0 && (
-                <p className="text-[10px] md:text-xs text-ink/50">includes ₹{optionsTotal} options</p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 md:gap-3 flex-1 sm:flex-initial justify-end">
-              {justAdded && (
-                <button
-                  onClick={() => navigate("/cart")}
-                  className="hidden sm:inline text-sm font-semibold text-brand underline shrink-0"
-                >
-                  Go to cart
-                </button>
-              )}
-              <button
-                onClick={handleAddToCart}
-                disabled={!selectedVariant || !!missingRequiredGroup}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 md:gap-2 border-2 border-brand text-brand font-semibold px-4 md:px-6 py-2.5 md:py-3.5 rounded-full hover:bg-brand/5 transition-colors disabled:opacity-40 text-xs md:text-base"
-              >
-                <span className="material-symbols-outlined text-lg md:text-xl">shopping_cart</span>
-                {justAdded
-                  ? "Added ✓"
-                  : missingRequiredGroup
-                  ? `Choose ${missingRequiredGroup.name}`
-                  : "Add to Cart"}
-              </button>
-              <button
-                onClick={handleBuyNow}
-                disabled={!selectedVariant || !!missingRequiredGroup}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 md:gap-2 bg-brand text-white font-semibold px-4 md:px-8 py-2.5 md:py-3.5 rounded-full hover:bg-brand-dark transition-colors disabled:opacity-40 text-xs md:text-base"
-              >
-                Buy Now
-              </button>
-            </div>
+        <div className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-hairline shadow-[0_-2px_10px_rgba(26,26,26,0.08)]">
+          <div className="page-x py-2 flex items-center gap-2">
+            <p className="font-display text-lg font-bold text-ink shrink-0 pr-1">₹{total.toFixed(0)}</p>
+            <button
+              onClick={handleAddToCart}
+              disabled={!selectedVariant || !!missingRequiredGroup}
+              className="flex-1 flex items-center justify-center gap-1 border-2 border-brand text-brand font-semibold h-10 rounded-full disabled:opacity-40 text-xs"
+            >
+              <span className="material-symbols-outlined text-base">shopping_cart</span>
+              {addLabel}
+            </button>
+            <button
+              onClick={handleBuyNow}
+              disabled={!selectedVariant || !!missingRequiredGroup}
+              className="flex-1 flex items-center justify-center bg-brand text-white font-semibold h-10 rounded-full disabled:opacity-40 text-xs"
+            >
+              Buy Now
+            </button>
           </div>
         </div>
       )}
@@ -404,7 +412,7 @@ export default function ProductDetailPage() {
                 <Link
                   key={item.id}
                   to={`/product/${item.id}`}
-                  className="group bg-white rounded border border-hairline overflow-hidden hover:border-brand/40 transition-colors"
+                  className="group bg-white rounded border border-hairline overflow-hidden hover:border-brand/40 transition-colors flex flex-col h-full"
                 >
                   <div className="relative aspect-square overflow-hidden bg-surface-alt">
                     <img
@@ -414,11 +422,11 @@ export default function ProductDetailPage() {
                     />
                     <ProductBadges product={item} className="absolute top-3 left-3 right-3" />
                   </div>
-                  <div className="p-4">
+                  <div className="p-4 flex-1">
                     <p className="text-[10px] font-bold uppercase tracking-wide text-ink/50">
                       {item.category?.name}
                     </p>
-                    <h3 className="font-display font-bold text-ink leading-snug mt-0.5">{item.name}</h3>
+                    <h3 className="font-display font-bold text-ink leading-snug mt-0.5 line-clamp-2 min-h-[2.75rem]">{item.name}</h3>
                     {from !== null && <PriceLine product={item} className="mt-1" />}
                   </div>
                 </Link>

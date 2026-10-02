@@ -145,7 +145,7 @@ export default function ShopPage() {
               <Link
                 key={product.id}
                 to={`/product/${product.id}`}
-                className={`group bg-white rounded border border-hairline overflow-hidden flex flex-col transition-colors ${
+                className={`group bg-white rounded border border-hairline overflow-hidden flex flex-col h-full transition-colors ${
                   isUnavailable ? "opacity-70" : "hover:border-brand/40"
                 }`}
               >
@@ -171,7 +171,7 @@ export default function ShopPage() {
                 </div>
 
                 <div className="p-4 flex-1 flex flex-col">
-                  <h2 className="font-display font-bold text-ink leading-snug">{product.name}</h2>
+                  <h2 className="font-display font-bold text-ink leading-snug line-clamp-2 min-h-[2.75rem]">{product.name}</h2>
                   {from !== null && <PriceLine product={product} className="mt-1" />}
                   <p
                     className={`text-xs mt-auto pt-3 border-t border-hairline ${

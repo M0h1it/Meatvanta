@@ -24,13 +24,13 @@ const MAX_INPUT_PIXELS = 50 * 1000 * 1000;
  * Throws a 422 (shown to the admin) if the file is not a readable image,
  * e.g. a renamed PDF or a corrupted upload.
  */
-async function processProductImage(inputBuffer) {
+async function processProductImage(inputBuffer, maxDimension = MAX_DIMENSION) {
   try {
     const buffer = await sharp(inputBuffer, { limitInputPixels: MAX_INPUT_PIXELS })
       .rotate()
       .resize({
-        width: MAX_DIMENSION,
-        height: MAX_DIMENSION,
+        width: maxDimension,
+        height: maxDimension,
         fit: "inside",
         withoutEnlargement: true,
       })

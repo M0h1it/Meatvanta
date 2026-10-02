@@ -34,7 +34,27 @@ export default function CouponBox({ coupon, showOffers = true }) {
         Have a coupon?
       </p>
 
-      {couponCode && preview && (
+      {preview?.kind === "welcome" && (
+        <div className="rounded-sm border border-success/30 bg-success/5 px-3 py-2 mb-2" role="status">
+          <p className="text-sm font-bold text-success">Welcome offer applied</p>
+          <p className="text-xs text-success/80">
+            {preview.welcome?.percent}% off your first order - you save {formatRupees(preview.savings)}
+          </p>
+          {preview.supersededCoupon && (
+            <div className="flex items-start justify-between gap-2 mt-1.5 pt-1.5 border-t border-success/20">
+              <p className="text-xs text-ink/70">
+                Coupon <span className="font-mono font-semibold">{preview.supersededCoupon}</span> wasn't used - the
+                welcome offer saves you more.
+              </p>
+              <button type="button" onClick={remove} className="text-xs font-bold text-brand underline shrink-0">
+                Remove
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {couponCode && preview?.kind === "coupon" && (
         <div className="flex items-start justify-between gap-2 rounded-sm border border-success/30 bg-success/5 px-3 py-2 mb-2" role="status">
           <div className="min-w-0">
             <p className="text-sm font-bold text-success font-mono tracking-wide">{preview.code} applied</p>

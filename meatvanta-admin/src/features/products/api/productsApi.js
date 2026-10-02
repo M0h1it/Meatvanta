@@ -1,10 +1,22 @@
 import apiClient from "../../../lib/apiClient";
 
-export async function fetchProducts({ categoryId, includeInactive = true, search } = {}) {
+// status: "active" | "inactive" | "all". Without it, includeInactive decides (old behaviour).
+export async function fetchProducts({ categoryId, includeInactive = true, status, search } = {}) {
   const { data } = await apiClient.get("/products", {
-    params: { categoryId, includeInactive, search },
+    params: { categoryId, includeInactive, status, search },
   });
   return data.data.products;
+}
+
+/** { active, inactive } totals for the tab badges. */
+export async function fetchProductCounts() {
+  const { data } = await apiClient.get("/products/counts/status");
+  return data.data.counts;
+}
+
+export async function permanentlyDeleteProduct(id) {
+  const { data } = await apiClient.delete(`/products/${id}/permanent`);
+  return data.data;
 }
 
 export async function fetchProduct(id) {

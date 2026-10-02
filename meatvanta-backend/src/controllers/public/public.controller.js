@@ -307,7 +307,41 @@ async function applyCoupon(req, res, next) {
   }
 }
 
+/**
+ * Cart/checkout price preview: optional coupon code + the chosen payment
+ * method. Also applies the new-customer welcome offer (the bigger saving wins).
+ */
+async function previewCheckout(req, res, next) {
+  try {
+    const { code, items, customerPhone, paymentMethod } = req.body || {};
+    const hasCode = typeof code === "string" && code.trim().length > 0;
+    if (code !== undefined && code !== null && typeof code !== "string") return failure(res, 422, "Enter a coupon code.");
+    if (hasCode && code.trim().length > 30) return failure(res, 422, "Enter a valid coupon code.");
+    if (paymentMethod !== undefined && !["cod", "razorpay"].includes(paymentMethod)) {
+      return failure(res, 422, "Choose a valid payment method.");
+    }
+    const validItems =
+      Array.isArray(items) &&
+      items.length > 0 &&
+      items.length <= 100 &&
+      items.every((i) => Number.isInteger(i?.productVariantId) && Number.isInteger(i?.quantity) && i.quantity > 0);
+    if (!validItems) return failure(res, 422, "Your cart is empty.");
+
+    const preview = await ordersService.previewCheckout({
+      code: hasCode ? code : undefined,
+      items,
+      paymentMethod,
+      customerPhone: req.customer?.phone || (typeof customerPhone === "string" ? customerPhone : undefined),
+    });
+    return success(res, 200, "Price checked.", { preview });
+  } catch (err) {
+    if (err.expose) return failure(res, err.statusCode, err.message);
+    return next(err);
+  }
+}
+
 module.exports = {
+  previewCheckout,
   listCoupons,
   applyCoupon,
   listCategories,

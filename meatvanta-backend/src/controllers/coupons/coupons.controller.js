@@ -1,10 +1,35 @@
 const couponsService = require("../../services/coupons/coupons.service");
+const newCustomerOffer = require("../../services/newCustomerOffer/newCustomerOffer.service");
 const { success, failure } = require("../../utils/apiResponse.util");
 const { writeAuditLog } = require("../../utils/auditLogger.util");
 
 function handleServiceError(err, next, res) {
   if (err.expose) return failure(res, err.statusCode, err.message);
   return next(err);
+}
+
+async function getNewCustomerOffer(req, res, next) {
+  try {
+    return success(res, 200, "Settings fetched.", { settings: await newCustomerOffer.getSettings() });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function updateNewCustomerOffer(req, res, next) {
+  try {
+    const settings = await newCustomerOffer.updateSettings(req.body || {});
+    await writeAuditLog({
+      adminId: req.admin.id,
+      action: "coupons:update",
+      entity: "NewCustomerOffer",
+      metadata: settings,
+      ipAddress: req.ip,
+    });
+    return success(res, 200, "New customer offer saved.", { settings });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
 }
 
 async function list(req, res, next) {
@@ -70,4 +95,6 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { list, getOne, create, update, remove };
+module.exports = {
+  getNewCustomerOffer,
+  updateNewCustomerOffer, list, getOne, create, update, remove };

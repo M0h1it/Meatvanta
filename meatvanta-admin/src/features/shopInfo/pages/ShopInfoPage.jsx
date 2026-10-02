@@ -32,6 +32,15 @@ const FIELD_SECTIONS = [
     ],
   },
   {
+    title: "Social Media",
+    hint: "Shown as icons in the website footer. Paste the full profile link. Leave blank to hide an icon.",
+    fields: [
+      { key: "instagramUrl", label: "Instagram", placeholder: "https://www.instagram.com/yourshop" },
+      { key: "facebookUrl", label: "Facebook", placeholder: "https://www.facebook.com/yourshop" },
+      { key: "youtubeUrl", label: "YouTube", placeholder: "https://www.youtube.com/@yourshop" },
+    ],
+  },
+  {
     title: "Story",
     hint: "Blank lines start a new paragraph. This is the About page.",
     fields: [

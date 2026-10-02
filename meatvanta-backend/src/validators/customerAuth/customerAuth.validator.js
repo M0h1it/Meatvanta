@@ -1,14 +1,19 @@
 /**
- * The only thing the widget-based OTP flow hands our backend is the
- * access-token MSG91 issued once the customer entered the right code -
- * there's no phone/otp pair to validate here anymore (see
- * customerAuth.service.js verifyOtp / msg91.service.js).
+ * Two ways to prove the phone number:
+ *  - accessToken: issued by the MSG91 OTP Widget once the customer typed the
+ *    right code (see customerAuth.service.js verifyOtp / msg91.service.js).
+ *  - signupToken: issued by OUR backend right after that check, for a number
+ *    that still needs a name. MSG91's access-token can only be checked once,
+ *    so the "enter your name" step presents this instead of asking MSG91 again.
  */
 function validateOtpVerification(body) {
   const errors = {};
-  const { accessToken, name } = body || {};
+  const { accessToken, signupToken, name } = body || {};
 
-  if (!accessToken || typeof accessToken !== "string" || accessToken.trim().length < 10) {
+  const hasAccessToken = typeof accessToken === "string" && accessToken.trim().length >= 10;
+  const hasSignupToken = typeof signupToken === "string" && signupToken.trim().length >= 10;
+
+  if (!hasAccessToken && !hasSignupToken) {
     errors.accessToken = "Missing verification token.";
   }
   // name is optional - only required for a phone number with no account yet,

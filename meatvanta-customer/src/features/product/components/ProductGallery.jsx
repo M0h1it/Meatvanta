@@ -55,9 +55,38 @@ export default function ProductGallery({ images = [], fallbackSrc, alt }) {
     }
   }
 
+  // Laptop: thumbnails run down the left (Amazon style) and the main photo is a
+  // square sized to the screen height, so the whole photo is always in view and
+  // fills its frame - no empty bars. Phone: full-width swipeable photo + dots.
+  const SIZE = "md:w-[min(60vh,500px)] md:h-[min(60vh,500px)]";
   return (
-    <div>
-      <div className="group relative rounded overflow-hidden border border-hairline bg-white">
+    <div className="md:sticky md:top-28 md:self-start md:flex md:gap-3">
+      {hasMany && (
+        <div
+          className="hidden md:flex md:flex-col gap-2 w-16 shrink-0 overflow-y-auto max-h-[min(60vh,500px)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="Product photos"
+        >
+          {photos.map((photo, index) => (
+            <button
+              key={photo.id}
+              type="button"
+              role="tab"
+              onClick={() => scrollToIndex(index)}
+              onMouseEnter={() => scrollToIndex(index)}
+              aria-label={`Show photo ${index + 1}`}
+              aria-selected={index === activeIndex}
+              className={`w-16 h-16 shrink-0 rounded overflow-hidden border-2 transition-colors ${
+                index === activeIndex ? "border-brand" : "border-hairline opacity-80 hover:opacity-100"
+              }`}
+            >
+              <img src={photo.url} alt="" loading="lazy" className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className={`group relative rounded overflow-hidden border border-hairline bg-white md:shrink-0 ${SIZE}`}>
         <div
           ref={trackRef}
           onScroll={hasMany ? handleScroll : undefined}
@@ -66,7 +95,7 @@ export default function ProductGallery({ images = [], fallbackSrc, alt }) {
           role={hasMany ? "region" : undefined}
           aria-roledescription={hasMany ? "carousel" : undefined}
           aria-label={hasMany ? `${alt} photos` : undefined}
-          className={`flex aspect-square ${
+          className={`flex aspect-square md:aspect-auto md:h-full w-full ${
             hasMany
               ? "overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               : "overflow-hidden"
@@ -90,7 +119,7 @@ export default function ProductGallery({ images = [], fallbackSrc, alt }) {
             <ArrowButton direction="left" disabled={activeIndex === 0} onClick={() => go(-1)} />
             <ArrowButton direction="right" disabled={activeIndex === photos.length - 1} onClick={() => go(1)} />
 
-            {/* Dots: mobile only - desktop has thumbnails */}
+            {/* Dots: phone only - laptop has the thumbnail column */}
             <div className="md:hidden absolute bottom-3 inset-x-0 flex justify-center gap-1.5 pointer-events-none">
               {photos.map((photo, index) => (
                 <span
@@ -104,25 +133,6 @@ export default function ProductGallery({ images = [], fallbackSrc, alt }) {
           </>
         )}
       </div>
-
-      {hasMany && (
-        <div className="hidden md:grid grid-cols-5 lg:grid-cols-6 gap-2 mt-3">
-          {photos.map((photo, index) => (
-            <button
-              key={photo.id}
-              type="button"
-              onClick={() => scrollToIndex(index)}
-              aria-label={`Show photo ${index + 1}`}
-              aria-current={index === activeIndex}
-              className={`aspect-square rounded overflow-hidden border-2 transition-colors ${
-                index === activeIndex ? "border-brand" : "border-transparent opacity-70 hover:opacity-100"
-              }`}
-            >
-              <img src={photo.url} alt="" loading="lazy" className="w-full h-full object-cover" />
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

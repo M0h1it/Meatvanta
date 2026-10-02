@@ -47,7 +47,7 @@ export default function Topbar() {
   function handleNotificationClick(notification) {
     if (!notification.isRead) markRead(notification.id);
     setNotificationsOpen(false);
-    if (notification.entityType === "Order") navigate("/orders");
+    if (notification.entityType === "Order") navigate(notification.entityId ? `/orders/${notification.entityId}` : "/orders");
   }
 
   return (

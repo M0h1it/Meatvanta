@@ -12,9 +12,12 @@ router.post("/", requireAuth, requirePermission("products:create"), productsCont
 router.post("/combos", requireAuth, requirePermission("products:create"), productsController.createCombo);
 router.put("/:id/combo-items", requireAuth, requirePermission("products:update"), productsController.setComboItems);
 router.get("/", requireAuth, requirePermission("products:view"), productsController.list);
+router.get("/counts/status", requireAuth, requirePermission("products:view"), productsController.counts);
 router.get("/:id", requireAuth, requirePermission("products:view"), productsController.getOne);
 router.put("/:id", requireAuth, requirePermission("products:update"), productsController.update);
 router.delete("/:id", requireAuth, requirePermission("products:delete"), productsController.remove);
+// Permanent delete - only for an already-deactivated product (checked in the service).
+router.delete("/:id/permanent", requireAuth, requirePermission("products:delete"), productsController.removePermanently);
 
 // Product image gallery. The first image (lowest sortOrder) is the cover.
 router.post(

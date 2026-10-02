@@ -51,4 +51,88 @@ async function markAllAsRead() {
   return { markedCount: result.count };
 }
 
-module.exports = { createNotification, listNotifications, getUnreadCount, markAsRead, markAllAsRead };
+// How far back an unacknowledged order alert is still worth shouting about.
+const ORDER_ALERT_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Unread "new order" alerts with the order details, oldest first - what the
+ * admin popup shows. Stays in the list until someone presses OK (which marks
+ * the notification read), so a missed sound never means a missed order.
+ */
+async function listPendingOrderAlerts({ limit = 20 } = {}) {
+  const alerts = await prisma.notification.findMany({
+    where: {
+      type: "new_order",
+      isRead: false,
+      entityType: "Order",
+      entityId: { not: null },
+      createdAt: { gte: new Date(Date.now() - ORDER_ALERT_WINDOW_MS) },
+    },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  });
+  if (alerts.length === 0) return [];
+
+  const orders = await prisma.order.findMany({
+    where: { id: { in: alerts.map((a) => a.entityId) } },
+    include: { items: { orderBy: { id: "asc" } } },
+  });
+  const byId = new Map(orders.map((o) => [o.id, o]));
+
+  const result = [];
+  for (const alert of alerts) {
+    const order = byId.get(alert.entityId);
+    if (!order) continue;
+    result.push({
+      notificationId: alert.id,
+      createdAt: alert.createdAt,
+      order: {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        deliveryAddress: order.deliveryAddress,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        subtotal: Number(order.subtotal),
+        deliveryCharge: Number(order.deliveryCharge),
+        discount: Number(order.discount),
+        couponCode: order.couponCode,
+        total: Number(order.total),
+        deliveryDate: order.deliveryDate,
+        deliveryStartTime: order.deliveryStartTime,
+        deliveryEndTime: order.deliveryEndTime,
+        notes: order.notes,
+        items: order.items.map((i) => ({
+          id: i.id,
+          productName: i.productName,
+          variantLabel: i.variantLabel,
+          quantity: i.quantity,
+          lineTotal: Number(i.lineTotal),
+          selectedOptions: Array.isArray(i.selectedOptions) ? i.selectedOptions : [],
+        })),
+      },
+    });
+  }
+  return result;
+}
+
+/**
+ * The admin pressed OK on an order popup: mark that alert read, plus the
+ * "payment received" alert of the same order (Razorpay creates both).
+ */
+async function acknowledgeOrderAlert(id) {
+  const alert = await markAsRead(id);
+  if (alert.entityId) {
+    await prisma.notification.updateMany({
+      where: { entityType: "Order", entityId: alert.entityId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
+    });
+  }
+  return alert;
+}
+
+module.exports = {
+  listPendingOrderAlerts,
+  acknowledgeOrderAlert, createNotification, listNotifications, getUnreadCount, markAsRead, markAllAsRead };

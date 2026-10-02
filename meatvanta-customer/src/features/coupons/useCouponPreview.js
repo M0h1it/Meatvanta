@@ -3,16 +3,21 @@ import { useCart } from "../../hooks/useCart";
 import { previewCoupon } from "./api/couponsApi";
 
 /**
- * Keeps the applied coupon in sync with the cart.
+ * Keeps the server's price preview in sync with the cart.
  * - apply(code): checks a new code; only kept if the server accepts it (a
  *   rejected code leaves any coupon already applied in place).
- * - whenever the cart (or the phone number at checkout) changes, the kept code
- *   is checked again; if it no longer works it is removed and the reason shown.
+ * - whenever the cart, the phone number or the payment method changes, the
+ *   preview is fetched again (with the kept code, if any); a kept code that no
+ *   longer works is removed and the reason shown.
+ * - The preview also carries the new-customer welcome offer. Only ONE saving
+ *   applies: `preview.kind` is "coupon", "welcome" or null.
  *
  * Returns { couponCode, preview, isChecking, error, apply, remove }.
- * preview = { code, summary, discount, freeDelivery, savings, ... } from the server.
+ * couponCode = what the customer typed (kept even while the welcome offer is
+ * the bigger saving, so it applies again if they switch payment method).
+ * preview = { kind, code, summary, discount, freeDelivery, savings, welcome, ... }.
  */
-export function useCouponPreview({ customerPhone } = {}) {
+export function useCouponPreview({ customerPhone, paymentMethod } = {}) {
   const { items, couponCode, setCouponCode } = useCart();
   const [preview, setPreview] = useState(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -27,10 +32,10 @@ export function useCouponPreview({ customerPhone } = {}) {
       const id = ++requestId.current;
       setIsChecking(true);
       try {
-        const result = await previewCoupon({ code, items, customerPhone });
+        const result = await previewCoupon({ code, items, customerPhone, paymentMethod });
         if (id !== requestId.current) return false;
         setPreview(result);
-        setCouponCode(result.code);
+        if (code) setCouponCode(code); // the typed code, even if the welcome offer won
         setError(null);
         return true;
       } catch (err) {
@@ -39,8 +44,14 @@ export function useCouponPreview({ customerPhone } = {}) {
         // A newly typed code that fails leaves the coupon already applied (if any)
         // as it was; a kept code that stopped working is removed.
         if (!keepOnFail) {
-          setPreview(null);
           setCouponCode("");
+          // Show the price without the dead code (the welcome offer may still apply).
+          try {
+            const plain = await previewCoupon({ code: undefined, items, customerPhone, paymentMethod });
+            if (id === requestId.current) setPreview(plain);
+          } catch {
+            if (id === requestId.current) setPreview(null);
+          }
         }
         return false;
       } finally {
@@ -48,19 +59,19 @@ export function useCouponPreview({ customerPhone } = {}) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cartKey, customerPhone, setCouponCode]
+    [cartKey, customerPhone, paymentMethod, setCouponCode]
   );
 
-  // Re-check the kept code when the cart or phone changes (small delay while typing).
+  // Fetch again when the cart, phone or payment method changes (small delay while typing).
   useEffect(() => {
-    if (!couponCode || items.length === 0) {
+    if (items.length === 0) {
       setPreview(null);
       return undefined;
     }
-    const timer = setTimeout(() => check(couponCode, { keepOnFail: false }), 350);
+    const timer = setTimeout(() => check(couponCode || undefined, { keepOnFail: false }), 350);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartKey, customerPhone]);
+  }, [cartKey, customerPhone, paymentMethod]);
 
   const apply = useCallback(
     (code) => {
@@ -77,9 +88,12 @@ export function useCouponPreview({ customerPhone } = {}) {
   const remove = useCallback(() => {
     requestId.current += 1;
     setCouponCode("");
-    setPreview(null);
     setError(null);
-  }, [setCouponCode]);
+    // Price again without the code - the welcome offer may still apply.
+    if (items.length > 0) check(undefined, { keepOnFail: true });
+    else setPreview(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setCouponCode, check]);
 
   return { couponCode, preview, isChecking, error, apply, remove };
 }

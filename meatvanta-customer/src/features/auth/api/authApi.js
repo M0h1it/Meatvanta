@@ -5,8 +5,10 @@ import apiClient from "../../../lib/apiClient";
  * customer entered the right code (see LoginSheet.jsx, which drives the
  * widget itself - sending/matching the OTP never touches our backend).
  */
-export async function verifyOtp({ accessToken, name }) {
-  const { data } = await apiClient.post("/auth/verify-otp", { accessToken, name });
+export async function verifyOtp({ accessToken, signupToken, name }) {
+  // First call carries MSG91's accessToken. If the number is new, the backend
+  // answers "name needed" plus a signupToken, and the retry sends that instead.
+  const { data } = await apiClient.post("/auth/verify-otp", { accessToken, signupToken, name });
   return data.data; // { customer, isNewCustomer }
 }
 

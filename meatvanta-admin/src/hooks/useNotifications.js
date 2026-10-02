@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   fetchNotifications,
   fetchUnreadCount,
@@ -6,14 +6,14 @@ import {
   markAllNotificationsRead,
 } from "../features/notifications/api/notificationsApi";
 import { usePermission } from "./usePermission";
-import { playNotificationSound } from "../lib/notificationSound";
 
-const POLL_INTERVAL_MS = 30000; // 30s - plenty for a shop doing tens of orders a day
+const POLL_INTERVAL_MS = 10000; // 10s - the bell badge; the order popup polls on its own
 
 /**
- * Polls the unread count and rings a chime when it goes up.
+ * Polls the unread count for the bell badge. (The loud new-order sound and
+ * popup live in useNewOrderAlerts - one sound per order, not two.)
  * Polling rather than websockets is a deliberate trade: real-time infra isn't
- * worth the complexity at this volume, and a 30s delay is invisible in practice.
+ * worth the complexity at this volume, and a 10s delay is invisible in practice.
  */
 export function useNotifications() {
   const { hasPermission } = usePermission();
@@ -23,24 +23,10 @@ export function useNotifications() {
   const [notifications, setNotifications] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Tracks the previous count so we only chime on an *increase*, not every poll.
-  // Deliberately compared outside the setState updater - React StrictMode
-  // double-invokes updaters in dev, which made the sound fire unreliably.
-  const previousCountRef = useRef(null);
-
   const refreshCount = useCallback(async () => {
     if (!canView) return;
     try {
       const count = await fetchUnreadCount();
-
-      const previous = previousCountRef.current;
-      previousCountRef.current = count;
-
-      // previous === null means this is the first poll after load - don't chime
-      // for notifications that were already sitting there.
-      if (previous !== null && count > previous) {
-        playNotificationSound();
-      }
 
       setUnreadCount(count);
     } catch {
@@ -81,7 +67,6 @@ export function useNotifications() {
       await markAllNotificationsRead();
       setNotifications((current) => current.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
-      previousCountRef.current = 0;
     } catch {
       // no-op
     }

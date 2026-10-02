@@ -37,12 +37,22 @@ async function list(req, res, next) {
   try {
     const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
     const includeInactive = req.query.includeInactive === "true";
+    const status = ["active", "inactive", "all"].includes(req.query.status) ? req.query.status : undefined;
     const products = await productsService.listProducts({
       categoryId,
       includeInactive,
+      status,
       search: req.query.search,
     });
     return success(res, 200, "Products fetched.", { products });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function counts(req, res, next) {
+  try {
+    return success(res, 200, "Counts fetched.", { counts: await productsService.countByStatus() });
   } catch (err) {
     return next(err);
   }
@@ -93,6 +103,26 @@ async function remove(req, res, next) {
     });
 
     return success(res, 200, "Product deactivated.", { product });
+  } catch (err) {
+    return handleServiceError(err, next, res);
+  }
+}
+
+async function removePermanently(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    const result = await productsService.permanentlyDeleteProduct(id);
+
+    await writeAuditLog({
+      adminId: req.admin.id,
+      action: "products:delete",
+      entity: "Product",
+      entityId: id,
+      metadata: { permanent: true },
+      ipAddress: req.ip,
+    });
+
+    return success(res, 200, "Product deleted permanently.", result);
   } catch (err) {
     return handleServiceError(err, next, res);
   }
@@ -510,9 +540,11 @@ async function deleteOption(req, res, next) {
 module.exports = {
   create,
   list,
+  counts,
   getOne,
   update,
   remove,
+  removePermanently,
   addVariant,
   updateVariant,
   deleteVariant,

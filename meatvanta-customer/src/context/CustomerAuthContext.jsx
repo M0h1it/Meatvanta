@@ -55,8 +55,8 @@ export function CustomerAuthProvider({ children }) {
   }, []);
 
   const verifyOtp = useCallback(
-    async ({ accessToken, name }) => {
-      const result = await verifyOtpApi({ accessToken, name });
+    async ({ accessToken, signupToken, name }) => {
+      const result = await verifyOtpApi({ accessToken, signupToken, name });
       const withAddr = await withAddresses(result.customer);
       setCustomer(withAddr);
       setIsLoginOpen(false);

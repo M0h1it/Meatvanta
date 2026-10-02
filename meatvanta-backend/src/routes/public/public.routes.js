@@ -8,7 +8,7 @@ const bannersController = require("../../controllers/banners/banners.controller"
 const recipesController = require("../../controllers/recipes/recipes.controller");
 const customerAuthRoutes = require("../customerAuth/customerAuth.routes");
 const { requireCustomerAuth, attachCustomerIfPresent } = require("../../middlewares/customerAuth.middleware");
-const { couponRateLimiter } = require("../../middlewares/rateLimiter.middleware");
+const { couponRateLimiter, previewRateLimiter } = require("../../middlewares/rateLimiter.middleware");
 
 // No requireAuth anywhere in this file - deliberately public.
 router.get("/categories", publicController.listCategories);
@@ -32,6 +32,8 @@ router.get("/recipes/:slug", recipesController.getPublished);
 // Coupons: the cart's "Available offers" list, and a preview of a typed code.
 // The real check happens again when the order is placed.
 router.get("/coupons", publicController.listCoupons);
+// Price preview with the optional coupon AND the new-customer welcome offer.
+router.post("/checkout/preview", previewRateLimiter, attachCustomerIfPresent, publicController.previewCheckout);
 router.post("/coupons/apply", couponRateLimiter, attachCustomerIfPresent, publicController.applyCoupon);
 
 // Customer accounts, sessions and address book.

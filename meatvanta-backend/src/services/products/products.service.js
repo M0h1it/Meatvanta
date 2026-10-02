@@ -76,13 +76,18 @@ async function createProduct({ name, categoryId, description, sortOrder, variant
   });
 }
 
-async function listProducts({ categoryId, includeInactive = false, search, inStockOnly = false } = {}) {
+async function listProducts({ categoryId, includeInactive = false, status, search, inStockOnly = false } = {}) {
   const trimmedSearch = typeof search === "string" ? search.trim() : "";
 
   return prisma.product.findMany({
     where: {
       ...(categoryId ? { categoryId } : {}),
-      ...(includeInactive ? {} : { isActive: true }),
+      // status: "active" | "inactive" | "all". Older callers pass includeInactive.
+      ...(status === "inactive"
+        ? { isActive: false }
+        : status === "all" || (!status && includeInactive)
+          ? {}
+          : { isActive: true }),
       // Customer-facing calls pass inStockOnly so items pulled for the day vanish
       // from the shop; the admin list still shows them so they can be switched back.
       ...(inStockOnly ? { isInStock: true } : {}),
@@ -100,6 +105,15 @@ async function listProducts({ categoryId, includeInactive = false, search, inSto
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     include: productInclude,
   });
+}
+
+/** How many products are live / deactivated - drives the tab counts in admin. */
+async function countByStatus() {
+  const [active, inactive] = await Promise.all([
+    prisma.product.count({ where: { isActive: true } }),
+    prisma.product.count({ where: { isActive: false } }),
+  ]);
+  return { active, inactive };
 }
 
 async function getProductById(id) {
@@ -134,6 +148,43 @@ async function deleteProduct(id) {
   if (!existing) throw notFoundError("Product not found.");
 
   return prisma.product.update({ where: { id }, data: { isActive: false }, include: productInclude });
+}
+
+/**
+ * Permanent delete. Only for a product that is already deactivated, and only
+ * when none of its weights sits inside a combo. Past orders keep their own
+ * name/price snapshot (order_items.product_variant_id just becomes empty).
+ * Image files are removed from disk after the database rows are gone.
+ */
+async function permanentlyDeleteProduct(id) {
+  const existing = await prisma.product.findUnique({
+    where: { id },
+    include: { variants: { select: { id: true } }, images: { select: { path: true } } },
+  });
+  if (!existing) throw notFoundError("Product not found.");
+  if (existing.isActive) {
+    throw validationError("Deactivate this product first, then you can delete it permanently.");
+  }
+
+  const comboNames = new Map();
+  for (const v of existing.variants) {
+    for (const combo of await combosService.combosUsingVariant(v.id)) comboNames.set(combo.id, combo.name);
+  }
+  if (comboNames.size > 0) {
+    const names = [...comboNames.values()].map((n) => `"${n}"`).join(", ");
+    throw validationError(
+      `This product is inside ${comboNames.size === 1 ? "the combo" : "the combos"} ${names}. Remove it from ${comboNames.size === 1 ? "that combo" : "those combos"} first.`
+    );
+  }
+
+  const paths = [...existing.images.map((i) => i.path), existing.imagePath].filter(Boolean);
+  await prisma.product.delete({ where: { id } });
+
+  for (const path of new Set(paths)) {
+    const stillUsed = await prisma.productImage.count({ where: { path } });
+    if (stillUsed === 0) deleteLocalImage(path);
+  }
+  return { deletedId: id };
 }
 
 async function addVariant(productId, { label, price, mrp, isInStock, sortOrder }) {
@@ -423,6 +474,8 @@ module.exports = {
   getProductById,
   updateProduct,
   deleteProduct,
+  permanentlyDeleteProduct,
+  countByStatus,
   addVariant,
   updateVariant,
   deleteVariant,

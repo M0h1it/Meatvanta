@@ -25,3 +25,14 @@ export async function deleteCoupon(id) {
   const { data } = await apiClient.delete(`/coupons/${id}`);
   return data.data;
 }
+
+/** New-customer welcome offer (% off the first order) - stored as a shop setting. */
+export async function fetchNewCustomerOffer() {
+  const { data } = await apiClient.get("/coupons/new-customer-offer");
+  return data.data.settings;
+}
+
+export async function saveNewCustomerOffer(payload) {
+  const { data } = await apiClient.put("/coupons/new-customer-offer", payload);
+  return data.data.settings;
+}

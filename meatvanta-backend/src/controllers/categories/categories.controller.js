@@ -93,4 +93,44 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { create, list, getOne, update, remove };
+async function uploadImage(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    const slot = req.body?.slot === "mobile" ? "mobile" : "desktop";
+    const category = await categoriesService.setCategoryImage(id, slot, req.file);
+    await writeAuditLog({
+      adminId: req.admin.id,
+      action: "categories:update",
+      entity: "Category",
+      entityId: id,
+      metadata: { imageSlot: slot },
+      ipAddress: req.ip,
+    });
+    return success(res, 200, "Category image saved.", { category });
+  } catch (err) {
+    if (err.expose) return failure(res, err.statusCode, err.message);
+    return next(err);
+  }
+}
+
+async function removeImage(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    const slot = req.query.slot === "mobile" ? "mobile" : "desktop";
+    const category = await categoriesService.removeCategoryImage(id, slot);
+    await writeAuditLog({
+      adminId: req.admin.id,
+      action: "categories:update",
+      entity: "Category",
+      entityId: id,
+      metadata: { imageRemoved: slot },
+      ipAddress: req.ip,
+    });
+    return success(res, 200, "Category image removed.", { category });
+  } catch (err) {
+    if (err.expose) return failure(res, err.statusCode, err.message);
+    return next(err);
+  }
+}
+
+module.exports = { uploadImage, removeImage, create, list, getOne, update, remove };

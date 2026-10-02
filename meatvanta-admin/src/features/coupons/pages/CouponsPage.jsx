@@ -4,6 +4,7 @@ import { usePermission } from "../../../hooks/usePermission";
 import { showSuccess, showError, showConfirm } from "../../../lib/sweetAlert";
 import Toggle from "../../../components/common/Toggle";
 import CouponFormModal from "../components/CouponFormModal";
+import NewCustomerOfferCard from "../components/NewCustomerOfferCard";
 import { formatIst } from "../../banners/lib/placements";
 
 const STATUS = {
@@ -91,6 +92,8 @@ export default function CouponsPage() {
       </div>
 
       {error && <div className="bg-error-container text-on-error-container rounded-lg px-md py-sm mb-md text-sm">{error}</div>}
+
+      <NewCustomerOfferCard canUpdate={canUpdate} />
 
       {isLoading ? (
         <p className="text-sm text-on-surface-variant">Loading…</p>

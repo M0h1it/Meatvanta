@@ -32,6 +32,10 @@ export default function LoginSheet() {
   // what our backend actually checks (see authApi.verifyOtp), not the raw
   // 6-digit code.
   const accessTokenRef = useRef(null);
+  // Handed back by our backend when MSG91 confirmed a number that has no
+  // account yet. MSG91's access-token works only once, so the "enter your
+  // name" step sends this instead of asking MSG91 to verify the code again.
+  const signupTokenRef = useRef(null);
 
   const otpInputRef = useRef(null);
 
@@ -47,6 +51,7 @@ export default function LoginSheet() {
       setResendIn(0);
       reqIdRef.current = null;
       accessTokenRef.current = null;
+      signupTokenRef.current = null;
     }
   }, [isLoginOpen]);
 
@@ -128,6 +133,14 @@ export default function LoginSheet() {
     e.preventDefault();
     setError(null);
 
+    // Second step for a new customer: the code was already confirmed, so do NOT
+    // send it to MSG91 again (it would answer "otp already verified"). The
+    // backend gets its own signup token plus the name instead.
+    if (needsName && signupTokenRef.current) {
+      submitSignupWithName();
+      return;
+    }
+
     if (typeof window.verifyOtp !== "function") {
       setError("Couldn't load the verification service. Please refresh and try again.");
       return;
@@ -145,6 +158,7 @@ export default function LoginSheet() {
           const response = err.response?.data;
           // Backend tells us this number has no account yet and needs a name.
           if (response?.errors?.nameRequired) {
+            signupTokenRef.current = response.errors.signupToken || null;
             setNeedsName(true);
             setError(null);
           } else {
@@ -160,6 +174,45 @@ export default function LoginSheet() {
       },
       reqIdRef.current || undefined
     );
+  }
+
+  /** Finishes signup for a new number: our signup token + the name, no MSG91 call. */
+  async function submitSignupWithName() {
+    setIsSubmitting(true);
+    try {
+      await verifyOtp({ signupToken: signupTokenRef.current, name });
+      // Sheet closes itself on success via context.
+    } catch (err) {
+      const response = err.response?.data;
+      if (response?.errors?.nameRequired) {
+        // Name too short etc. - the backend issued a fresh token, keep going.
+        signupTokenRef.current = response.errors.signupToken || signupTokenRef.current;
+        setError("Please enter your name.");
+      } else {
+        // Most likely the 10-minute window passed - start over with a new code.
+        setError(response?.message || "Couldn't finish signing up. Please try again.");
+        if (response?.message?.includes("expired")) {
+          signupTokenRef.current = null;
+          setNeedsName(false);
+          setOtp("");
+        }
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  /** Back to the number step with nothing left over from the previous attempt. */
+  function handleChangeNumber() {
+    setStep(STEPS.PHONE);
+    setOtp("");
+    setName("");
+    setNeedsName(false);
+    setError(null);
+    setResendIn(0);
+    reqIdRef.current = null;
+    accessTokenRef.current = null;
+    signupTokenRef.current = null;
   }
 
   /** Resends via the widget's own retry method rather than sending a second
@@ -331,7 +384,7 @@ export default function LoginSheet() {
             <form onSubmit={handleVerify}>
               <button
                 type="button"
-                onClick={() => setStep(STEPS.PHONE)}
+                onClick={handleChangeNumber}
                 className="text-brand-dark text-sm font-semibold underline mb-4"
               >
                 Change number
@@ -350,8 +403,13 @@ export default function LoginSheet() {
                 required
                 placeholder="Enter code"
                 value={otp}
+                // Already confirmed once the name is asked for - locked so it
+                // can't be edited into something that no longer matches.
+                readOnly={needsName}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                className="w-full rounded-sm border border-ink/15 bg-white px-4 py-3 text-center text-lg font-bold tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-brand-dark"
+                className={`w-full rounded-sm border border-ink/15 px-4 py-3 text-center text-lg font-bold tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-brand-dark ${
+                  needsName ? "bg-surface-alt text-ink/60" : "bg-white"
+                }`}
               />
 
               {needsName && (
@@ -379,8 +437,10 @@ export default function LoginSheet() {
                 {isSubmitting ? "Verifying..." : needsName ? "Create Account" : "Login"}
               </button>
 
+              {/* Nothing to resend once the code has been accepted */}
               <button
                 type="button"
+                hidden={needsName}
                 disabled={resendIn > 0 || isSubmitting}
                 onClick={handleResend}
                 className="w-full mt-3 text-sm font-semibold text-ink/60 disabled:opacity-50"

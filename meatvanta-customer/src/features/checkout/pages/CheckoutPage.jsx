@@ -10,6 +10,37 @@ import CouponBox from "../../coupons/components/CouponBox";
 import { useCouponPreview } from "../../coupons/useCouponPreview";
 import { loadRazorpay } from "../../../lib/externalScripts";
 
+/**
+ * First-order welcome offer, shown on a payment option: the live saving when
+ * it applies to that method, a nudge when it only applies to the other one.
+ */
+function WelcomeNote({ welcome, method }) {
+  if (!welcome) return null;
+  const other = method === "cod" ? "razorpay" : "cod";
+  if (welcome.methods.includes(method)) {
+    const save = welcome.discountByMethod?.[method] || 0;
+    const short = welcome.shortByMethod?.[method] || 0;
+    return (
+      <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-success bg-success/10 px-2 py-0.5 rounded-full">
+        <span className="material-symbols-outlined text-sm">redeem</span>
+        {short > 0
+          ? `Add ${formatRupees(short)} more for ${welcome.percent}% off your first order`
+          : save > 0
+            ? `${welcome.percent}% off your first order - save ${formatRupees(save)}`
+            : `${welcome.percent}% off your first order`}
+      </span>
+    );
+  }
+  if (welcome.methods.includes(other)) {
+    return (
+      <span className="mt-1 block text-[11px] text-ink/50">
+        {method === "cod" ? "Pay online instead" : "Pay on delivery instead"} to get {welcome.percent}% off your first order.
+      </span>
+    );
+  }
+  return null;
+}
+
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
   const { customer, isAuthenticated, isLoading: authLoading, openLogin, refreshCustomer } = useCustomerAuth();
@@ -35,9 +66,13 @@ export default function CheckoutPage() {
 
   // Per-customer coupon rules go by phone number: the one typed here, else the account's.
   const phoneDigits = form.customerPhone.replace(/\D/g, "");
+  // The chosen payment method matters: the new-customer welcome offer can be
+  // limited to online (or cash) payment, so the price is re-checked when it changes.
   const coupon = useCouponPreview({
     customerPhone: phoneDigits.length >= 10 ? form.customerPhone : customer?.phone,
+    paymentMethod: form.paymentMethod,
   });
+  const welcome = coupon.preview?.welcome || null;
 
   // Razorpay is loaded here instead of on every page. Started when the page
   // opens so the payment window is ready by the time "Place Order" is pressed.
@@ -440,6 +475,7 @@ export default function CheckoutPage() {
                   <span>
                     <span className="font-semibold text-ink text-sm block">Cash on Delivery</span>
                     <span className="text-xs text-ink/60">Pay when your order arrives.</span>
+                    <WelcomeNote welcome={welcome} method="cod" />
                   </span>
                 </span>
                 <span className="text-[10px] font-bold uppercase text-success bg-success/10 px-2 py-0.5 rounded-full self-center shrink-0">
@@ -469,6 +505,7 @@ export default function CheckoutPage() {
                   <span>
                     <span className="font-semibold text-ink text-sm block">Pay Online</span>
                     <span className="text-xs text-ink/60">Card, UPI or Net Banking - pay securely now via Razorpay.</span>
+                    <WelcomeNote welcome={welcome} method="razorpay" />
                   </span>
                 </span>
                 <span className="text-[10px] font-bold uppercase text-success bg-success/10 px-2 py-0.5 rounded-full self-center shrink-0">
@@ -528,7 +565,13 @@ export default function CheckoutPage() {
             {discount > 0 && (
               <div className="flex justify-between text-sm text-success">
                 <span>
-                  Coupon <span className="font-mono font-semibold">{coupon.preview.code}</span>
+                  {coupon.preview.kind === "welcome" ? (
+                    <>Welcome offer ({welcome?.percent}% off)</>
+                  ) : (
+                    <>
+                      Coupon <span className="font-mono font-semibold">{coupon.preview.code}</span>
+                    </>
+                  )}
                 </span>
                 <span className="font-semibold">−{formatRupees(discount)}</span>
               </div>

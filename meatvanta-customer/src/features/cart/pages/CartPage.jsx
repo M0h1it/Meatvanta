@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../../../hooks/useCart";
 import { useCustomerAuth } from "../../../hooks/useCustomerAuth";
 import { productImage, HERO_IMAGE } from "../../../lib/images";
+import { formatRupees } from "../../../lib/format";
 import BannerSlot from "../../banners/components/BannerSlot";
 import CouponBox from "../../coupons/components/CouponBox";
 import { useCouponPreview } from "../../coupons/useCouponPreview";
@@ -13,6 +14,12 @@ export default function CartPage() {
   // The saving shown here comes from the server; checkout checks it again.
   const coupon = useCouponPreview({ customerPhone: customer?.phone });
   const discount = coupon.preview?.discount || 0;
+  // First-time customers: the welcome offer teaser (the discount itself is
+  // worked out at checkout, once the payment method is chosen).
+  const welcome = coupon.preview?.welcome || null;
+  const welcomeKey = welcome?.methods?.[0];
+  const welcomeShort = welcome && welcomeKey ? welcome.shortByMethod?.[welcomeKey] || 0 : 0;
+  const welcomeSave = welcome && welcomeKey ? welcome.discountByMethod?.[welcomeKey] || 0 : 0;
 
   // Sign-in is asked for here rather than at "Place Order" - better to know
   // who the customer is before they fill in a whole checkout form.
@@ -168,6 +175,23 @@ export default function CartPage() {
             <span className="font-bold text-ink">Total Amount</span>
             <span className="text-2xl font-bold text-brand">₹{(totalPrice - discount).toFixed(0)}</span>
           </div>
+
+          {welcome && welcome.methods.length > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-sm border border-success/30 bg-success/5 p-3">
+              <span className="material-symbols-outlined text-success text-lg">redeem</span>
+              <div>
+                <p className="text-xs font-bold text-success">{welcome.headline}</p>
+                <p className="text-[11px] text-ink/60">
+                  {welcomeShort > 0
+                    ? `Add ${formatRupees(welcomeShort)} more to unlock it.`
+                    : welcomeSave > 0
+                      ? `You'll save ${formatRupees(welcomeSave)} - applied automatically at checkout.`
+                      : "Applied automatically at checkout."}
+                  {" "}If you use a coupon too, you get whichever saves more.
+                </p>
+              </div>
+            </div>
+          )}
 
           <button
             onClick={handleProceedToCheckout}

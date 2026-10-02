@@ -5,6 +5,7 @@ const { writeAuditLog } = require("../../utils/auditLogger.util");
 function validate(body) {
   const errors = {};
   const { shopName, phone, whatsappNumber, email, yearsInBusiness, mapUrl } = body || {};
+  const { instagramUrl, facebookUrl, youtubeUrl } = body || {};
 
   if (shopName !== undefined && (typeof shopName !== "string" || shopName.trim().length < 2)) {
     errors.shopName = "Shop name must be at least 2 characters.";
@@ -24,6 +25,14 @@ function validate(body) {
   }
   if (mapUrl && !/^https?:\/\//.test(mapUrl)) {
     errors.mapUrl = "Map link must start with http:// or https://";
+  }
+  // Blank hides the icon. Anything else must be a real web link, since the
+  // footer puts it straight into an <a href>.
+  for (const [key, value] of Object.entries({ instagramUrl, facebookUrl, youtubeUrl })) {
+    if (value === undefined || value === null || String(value).trim() === "") continue;
+    if (!/^https?:\/\/\S+$/.test(String(value).trim()) || String(value).trim().length > 300) {
+      errors[key] = "Enter the full link, starting with https://";
+    }
   }
 
   return { isValid: Object.keys(errors).length === 0, errors };

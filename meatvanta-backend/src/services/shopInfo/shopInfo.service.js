@@ -16,6 +16,9 @@ const DEFAULTS = {
   aboutStory: "",
   qualityPromise: "",
   fssaiNumber: "",
+  instagramUrl: "",
+  facebookUrl: "",
+  youtubeUrl: "",
 };
 
 /** Reads the singleton, creating it on first access so the admin page is never empty. */
@@ -40,6 +43,9 @@ async function updateShopInfo(changes) {
     "aboutStory",
     "qualityPromise",
     "fssaiNumber",
+    "instagramUrl",
+    "facebookUrl",
+    "youtubeUrl",
   ];
 
   const data = {};

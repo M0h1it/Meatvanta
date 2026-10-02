@@ -7,14 +7,16 @@ export async function fetchAvailableCoupons() {
 }
 
 /**
- * Asks the server what a code saves on this cart. Nothing is reserved - the
- * order checks it again when it is placed.
+ * Asks the server what this cart costs: the optional coupon code and, for a
+ * first-time customer, the welcome offer (the bigger saving wins). Nothing is
+ * reserved - the order checks it all again when it is placed.
  */
-export async function previewCoupon({ code, items, customerPhone }) {
-  const { data } = await apiClient.post("/coupons/apply", {
-    code,
+export async function previewCoupon({ code, items, customerPhone, paymentMethod }) {
+  const { data } = await apiClient.post("/checkout/preview", {
+    code: code || undefined,
+    paymentMethod: paymentMethod || undefined,
     customerPhone: customerPhone || undefined,
     items: items.map((i) => ({ productVariantId: i.variantId, quantity: i.quantity, optionIds: i.optionIds?.length ? i.optionIds : undefined })),
   });
-  return data.data.coupon;
+  return data.data.preview;
 }

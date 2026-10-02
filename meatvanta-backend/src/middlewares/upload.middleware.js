@@ -33,6 +33,30 @@ const uploadProductImages = multer({
   limits: { fileSize: MAX_FILE_SIZE_BYTES, files: MAX_FILES_PER_UPLOAD },
 }).array("images", MAX_FILES_PER_UPLOAD); // form-data field name must be "images"
 
+// One photo for a category card (sent as the "image" field).
+const categoryUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+  limits: { fileSize: MAX_FILE_SIZE_BYTES, files: 1 },
+}).single("image");
+
+function uploadCategoryImage(req, res, next) {
+  categoryUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      const wrapped = new Error(
+        err.code === "LIMIT_FILE_SIZE"
+          ? `The image must be ${MAX_FILE_SIZE_MB}MB or smaller.`
+          : 'Upload one image using the "image" field.'
+      );
+      wrapped.statusCode = 422;
+      wrapped.expose = true;
+      return next(wrapped);
+    }
+    return next(err);
+  });
+}
+
 // ---------- Banners ----------
 // Up to three files per banner: the main (desktop) media, an optional phone
 // version and an optional cover image for videos. Type and size are checked
@@ -65,4 +89,4 @@ function uploadBannerMedia(req, res, next) {
   });
 }
 
-module.exports = { uploadProductImages, uploadBannerMedia, MAX_FILE_SIZE_MB, MAX_FILES_PER_UPLOAD };
+module.exports = { uploadProductImages, uploadCategoryImage, uploadBannerMedia, MAX_FILE_SIZE_MB, MAX_FILES_PER_UPLOAD };

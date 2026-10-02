@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   fetchProducts,
+  fetchProductCounts,
+  permanentlyDeleteProduct,
   fetchProduct,
   createProduct,
   updateProduct,
@@ -32,6 +34,8 @@ export default function ProductsPage() {
   const [categoryFilter, setCategoryFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput);
+  const [statusTab, setStatusTab] = useState("active"); // "active" | "inactive"
+  const [counts, setCounts] = useState({ active: 0, inactive: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [form, setForm] = useState(null);
@@ -49,13 +53,16 @@ export default function ProductsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [productsData, categoriesData] = await Promise.all([
+      const [productsData, categoriesData, countsData] = await Promise.all([
         fetchProducts({
+          status: statusTab,
           categoryId: categoryFilter || undefined,
           search: debouncedSearch || undefined,
         }),
         fetchCategories(),
+        fetchProductCounts().catch(() => null),
       ]);
+      if (countsData) setCounts(countsData);
       setProducts(productsData);
       setCategories(categoriesData);
     } catch (err) {
@@ -68,7 +75,7 @@ export default function ProductsPage() {
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryFilter, debouncedSearch]);
+  }, [categoryFilter, debouncedSearch, statusTab]);
 
   function openCreateForm() {
     setForm({ ...EMPTY_FORM, categoryId: categories[0]?.id || "" });
@@ -135,17 +142,43 @@ export default function ProductsPage() {
     }
   }
 
-  async function handleDeleteProduct(product) {
+  async function handleDeactivateProduct(product) {
     const confirmed = await showConfirm({
-      title: `Delete "${product.name}"?`,
-      text: "The product will be deactivated, not permanently removed.",
-      confirmButtonText: "Delete",
+      title: `Deactivate "${product.name}"?`,
+      text: "It will be hidden from the shop and moved to the Deactivated tab. You can restore it any time.",
+      confirmButtonText: "Deactivate",
     });
     if (!confirmed) return;
     try {
       await deleteProduct(product.id);
       loadAll();
       showSuccess("Product deactivated.");
+    } catch (err) {
+      showError(err.response?.data?.message || "Deactivate failed.");
+    }
+  }
+
+  async function handleRestoreProduct(product) {
+    try {
+      await updateProduct(product.id, { isActive: true });
+      loadAll();
+      showSuccess(`${product.name} restored.`);
+    } catch (err) {
+      showError(err.response?.data?.message || "Restore failed.");
+    }
+  }
+
+  async function handlePermanentDelete(product) {
+    const confirmed = await showConfirm({
+      title: `Delete "${product.name}" permanently?`,
+      text: "This removes the product and its photos for good and cannot be undone. Past orders keep their details.",
+      confirmButtonText: "Delete permanently",
+    });
+    if (!confirmed) return;
+    try {
+      await permanentlyDeleteProduct(product.id);
+      loadAll();
+      showSuccess("Product deleted permanently.");
     } catch (err) {
       showError(err.response?.data?.message || "Delete failed.");
     }
@@ -277,6 +310,35 @@ export default function ProductsPage() {
             </button>
           )}
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 mb-md" role="tablist" aria-label="Product status">
+        {[
+          { key: "active", label: "Active", count: counts.active },
+          { key: "inactive", label: "Deactivated", count: counts.inactive },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={statusTab === t.key}
+            onClick={() => setStatusTab(t.key)}
+            className={`flex items-center gap-2 text-sm px-4 py-2 rounded-full border transition-colors ${
+              statusTab === t.key
+                ? "bg-primary-container text-on-primary border-primary-container"
+                : "border-outline-variant text-on-surface-variant hover:bg-surface-container-low"
+            }`}
+          >
+            {t.label}
+            <span
+              className={`text-xs font-semibold px-1.5 rounded-full ${
+                statusTab === t.key ? "bg-white/25" : "bg-surface-container-high"
+              }`}
+            >
+              {t.count}
+            </span>
+          </button>
+        ))}
       </div>
 
       {error && (
@@ -475,7 +537,11 @@ export default function ProductsPage() {
         <p className="text-sm text-on-surface-variant">Loading...</p>
       ) : products.length === 0 ? (
         <p className="text-sm text-on-surface-variant">
-          {debouncedSearch ? `No products match "${debouncedSearch}".` : "No products yet."}
+          {debouncedSearch
+            ? `No products match "${debouncedSearch}".`
+            : statusTab === "inactive"
+              ? "No deactivated products."
+              : "No products yet."}
         </p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-md">
@@ -488,7 +554,7 @@ export default function ProductsPage() {
               <div
                 key={p.id}
                 className={`bg-surface-container-lowest rounded-lg border border-outline-variant overflow-hidden group ${
-                  p.isInStock ? "" : "opacity-60"
+                  statusTab === "inactive" ? "opacity-80" : p.isInStock ? "" : "opacity-60"
                 }`}
               >
                 <div className="aspect-square bg-surface-container-low flex items-center justify-center relative">
@@ -504,21 +570,39 @@ export default function ProductsPage() {
                     </span>
                   )}
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {canUpdate && (
-                      <button
-                        onClick={() => openEditForm(p.id)}
-                        className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center text-on-surface hover:bg-white"
-                      >
-                        <span className="material-symbols-outlined text-base">edit</span>
-                      </button>
-                    )}
-                    {canDelete && (
-                      <button
-                        onClick={() => handleDeleteProduct(p)}
-                        className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center text-error hover:bg-white"
-                      >
-                        <span className="material-symbols-outlined text-base">delete</span>
-                      </button>
+                    {statusTab === "active" ? (
+                      <>
+                        {canUpdate && (
+                          <button
+                            onClick={() => openEditForm(p.id)}
+                            title="Edit"
+                            className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center text-on-surface hover:bg-white"
+                          >
+                            <span className="material-symbols-outlined text-base">edit</span>
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={() => handleDeactivateProduct(p)}
+                            title="Deactivate"
+                            aria-label="Deactivate"
+                            className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center text-error hover:bg-white"
+                          >
+                            <span className="material-symbols-outlined text-base">visibility_off</span>
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      canDelete && (
+                        <button
+                          onClick={() => handlePermanentDelete(p)}
+                          title="Delete permanently"
+                          aria-label="Delete permanently"
+                          className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center text-error hover:bg-white"
+                        >
+                          <span className="material-symbols-outlined text-base">delete_forever</span>
+                        </button>
+                      )
                     )}
                   </div>
                 </div>
@@ -542,7 +626,32 @@ export default function ProductsPage() {
                     {inStockCount}/{p.variants.length} variants in stock
                   </p>
 
-                  {canToggleStock && (
+                  {statusTab === "inactive" && (
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t border-outline-variant">
+                      {canUpdate && (
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreProduct(p)}
+                          className="flex-1 flex items-center justify-center gap-1 text-sm px-3 py-1.5 rounded bg-primary-container text-on-primary hover:opacity-90"
+                        >
+                          <span className="material-symbols-outlined text-base">restore</span>
+                          Restore
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handlePermanentDelete(p)}
+                          className="flex items-center justify-center gap-1 text-sm px-3 py-1.5 rounded border border-error text-error hover:bg-error-container"
+                        >
+                          <span className="material-symbols-outlined text-base">delete_forever</span>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {statusTab === "active" && canToggleStock && (
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-outline-variant">
                       <span className="text-xs text-on-surface-variant">Available today</span>
                       <Toggle

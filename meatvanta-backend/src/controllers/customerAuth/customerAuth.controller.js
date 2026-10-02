@@ -28,7 +28,9 @@ function clearSessionCookies(res) {
  * The MSG91 OTP Widget handles sending/matching the code entirely on its own
  * (from the browser, directly to MSG91) - this endpoint only ever sees the
  * access-token the widget hands back once the customer typed the right code,
- * and confirms it server-side before a session is ever issued.
+ * and confirms it server-side before a session is ever issued. For a brand-new
+ * number it answers "name needed" together with a signupToken; the retry sends
+ * that token plus the name (see customerAuth.service.js verifyOtp).
  */
 async function verifyOtp(req, res, next) {
   try {
@@ -45,6 +47,9 @@ async function verifyOtp(req, res, next) {
     if (err.message === "NAME_REQUIRED") {
       return failure(res, 422, "Please tell us your name to finish signing up.", {
         nameRequired: true,
+        // Proof that MSG91 already confirmed this number - the retry sends it
+        // back instead of the (single-use) MSG91 access-token.
+        signupToken: err.signupToken,
       });
     }
     if (err.expose) return failure(res, err.statusCode, err.message);

@@ -2,6 +2,8 @@ const prisma = require("../../config/db");
 const msg91Service = require("../msg91/msg91.service");
 const {
   signCustomerAccessToken,
+  signSignupToken,
+  verifySignupToken,
   generateRefreshToken,
   hashRefreshToken,
 } = require("../../utils/customerJwt.util");
@@ -16,24 +18,39 @@ function badRequestError(message, statusCode = 400) {
 }
 
 /**
- * Verifies the MSG91 OTP Widget's access-token and logs the customer in,
- * creating the account on first successful verification (no separate signup
- * step). OTP generation/delivery/matching all happen on MSG91's side now
- * (the widget talks to MSG91 directly from the browser) - this function's
- * only job is confirming that access-token server-side before trusting it,
- * then mapping the now-verified phone number onto a Customer row.
+ * Logs the customer in, creating the account on first successful verification
+ * (no separate signup step). OTP generation/delivery/matching all happen on
+ * MSG91's side (the widget talks to MSG91 directly from the browser).
+ *
+ * The phone number is proven in one of two ways:
+ *  - accessToken: MSG91's widget token, confirmed server-side here. It can only
+ *    be confirmed ONCE - a second check makes MSG91 answer "already verified".
+ *  - signupToken: our own short-lived token, issued below when the number is new
+ *    and a name is still needed. The retry with the name sends this instead, so
+ *    MSG91 is never asked about the same OTP twice.
  */
-async function verifyOtp({ accessToken, name }) {
-  const phone = await msg91Service.verifyWidgetAccessToken(accessToken);
+async function verifyOtp({ accessToken, signupToken, name }) {
+  let phone;
+  if (signupToken) {
+    try {
+      phone = verifySignupToken(signupToken);
+    } catch {
+      throw badRequestError("Your verification has expired. Please request a new code.");
+    }
+  } else {
+    phone = await msg91Service.verifyWidgetAccessToken(accessToken);
+  }
 
   let customer = await prisma.customer.findUnique({ where: { phone } });
   const isNewCustomer = !customer;
 
   if (!customer) {
     if (!name || name.trim().length < 2) {
-      // New number - we need a name before the account can exist. The
-      // access-token stays valid for the retry (MSG91's, not ours to expire).
-      throw badRequestError("NAME_REQUIRED");
+      // New number - we need a name before the account can exist. The phone is
+      // already verified, so hand back a token for the retry.
+      const err = badRequestError("NAME_REQUIRED");
+      err.signupToken = signSignupToken(phone);
+      throw err;
     }
     customer = await prisma.customer.create({
       data: { name: name.trim(), phone, lastLoginAt: new Date() },

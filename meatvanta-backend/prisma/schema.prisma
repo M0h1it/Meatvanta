@@ -83,6 +83,13 @@ model Category {
   slug      String    @unique @db.VarChar(120)
   sortOrder Int       @default(0) @map("sort_order")
   isActive  Boolean   @default(true) @map("is_active")
+  // Optional photos for the home page category card (desktop + phone version).
+  // *Path = relative path under UPLOADS_DIR (used to delete the file).
+  // A category with no image still works: it shows a plain card.
+  imagePath       String? @map("image_path") @db.VarChar(500)
+  imageUrl        String? @map("image_url") @db.VarChar(500)
+  mobileImagePath String? @map("mobile_image_path") @db.VarChar(500)
+  mobileImageUrl  String? @map("mobile_image_url") @db.VarChar(500)
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
@@ -517,6 +524,11 @@ model ShopInfo {
   qualityPromise  String   @default("") @map("quality_promise") @db.Text
 
   fssaiNumber     String   @default("") @map("fssai_number") @db.VarChar(50)
+
+  // Social profiles shown as icons in the customer footer. Blank = icon hidden.
+  instagramUrl    String   @default("") @map("instagram_url") @db.VarChar(300)
+  facebookUrl     String   @default("") @map("facebook_url") @db.VarChar(300)
+  youtubeUrl      String   @default("") @map("youtube_url") @db.VarChar(300)
 
   updatedAt       DateTime @updatedAt @map("updated_at")
 

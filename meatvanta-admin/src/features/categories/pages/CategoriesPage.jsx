@@ -37,11 +37,14 @@ function formFromCategory(cat) {
 }
 
 /** One photo slot: preview, choose/replace, remove. Nothing is uploaded until Save. */
-function ImageSlot({ label, hint, value, onChange, disabled }) {
+function ImageSlot({ label, hint, value, onChange, disabled, required = false }) {
   const preview = value.file ? URL.createObjectURL(value.file) : value.remove ? null : value.url;
   return (
     <div>
-      <p className="font-label-bold text-label-bold text-on-surface mb-1">{label}</p>
+      <p className="font-label-bold text-label-bold text-on-surface mb-1">
+        {label}
+        {required && <span className="text-error"> *</span>}
+      </p>
       <div className="aspect-[4/3] rounded border border-dashed border-outline-variant bg-surface-container-low flex items-center justify-center overflow-hidden">
         {preview ? (
           <img src={preview} alt="" className="w-full h-full object-cover" />
@@ -65,7 +68,8 @@ function ImageSlot({ label, hint, value, onChange, disabled }) {
               }}
             />
           </label>
-          {preview && (
+          {/* A required photo can be replaced but never left empty. */}
+          {preview && (!required || value.file) && (
             <button
               type="button"
               onClick={() => onChange({ ...value, file: null, remove: !!value.url })}
@@ -110,6 +114,13 @@ export default function CategoriesPage() {
 
   async function handleSave(e) {
     e.preventDefault();
+    // The category photo is compulsory - the home page card is made from it.
+    if (!form.images.desktop.file && !form.images.desktop.url) {
+      const message = "Please add a category photo.";
+      setError(message);
+      showError(message);
+      return;
+    }
     try {
       let categoryId = form.id;
       if (form.id) {
@@ -196,19 +207,20 @@ export default function CategoriesPage() {
             {canUpdate && (
               <div className="mb-4">
                 <p className="text-xs text-on-surface-variant mb-2">
-                  Photo for the home page card. The category name and a "Shop Now" button are added automatically.
-                  Without a photo the card is a plain red card.
+                  This photo is the whole home page card, so use a banner with the category name already on it
+                  (wide, about 5:2 - like 1983 × 793 px). Only a "Shop Now" button is added on top.
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <ImageSlot
-                    label="Main photo"
-                    hint="Landscape works best. Shown on laptop and tablet."
+                    label="Category photo"
+                    required
+                    hint="Wide banner. Shown on laptop and tablet."
                     value={form.images.desktop}
                     onChange={(v) => setForm({ ...form, images: { ...form.images, desktop: v } })}
                   />
                   <ImageSlot
                     label="Phone photo (optional)"
-                    hint="If empty, the main photo is used on phones."
+                    hint="Tall banner (about 2:3). If empty, the wide photo is used on phones."
                     value={form.images.mobile}
                     onChange={(v) => setForm({ ...form, images: { ...form.images, mobile: v } })}
                   />

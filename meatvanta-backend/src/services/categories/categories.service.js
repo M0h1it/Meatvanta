@@ -51,6 +51,13 @@ async function setCategoryImage(id, slot, file) {
 async function removeCategoryImage(id, slot) {
   const cfg = IMAGE_SLOTS[slot];
   if (!cfg) throw invalidSlot();
+  // The main category photo is compulsory: it can be replaced, never removed.
+  if (slot === "desktop") {
+    const err = new Error("The category photo is required. Upload a new one to replace it.");
+    err.statusCode = 422;
+    err.expose = true;
+    throw err;
+  }
   const existing = await prisma.category.findUnique({ where: { id } });
   if (!existing) throw notFoundError();
 

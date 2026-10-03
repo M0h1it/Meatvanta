@@ -75,7 +75,7 @@ export default function HomePage() {
                 <span className="w-6 lg:w-8 h-px bg-accent" />
               </div>
               <h1 className="font-display leading-[1.05] mb-3 lg:mb-4 text-[clamp(1.5rem,3.4vw,3rem)]">
-                <span className="text-brand font-extrabold">Fresh Meat</span>
+                <span className="text-brand font-extrabold">Fresh Halal Meat</span>
                 <br />
                 <span className="text-accent font-extrabold">for a Healthier You</span>
               </h1>

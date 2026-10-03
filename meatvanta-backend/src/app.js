@@ -5,6 +5,7 @@ const morgan = require("morgan");
 
 const adminRoutes = require("./routes/index");
 const publicRoutes = require("./routes/public/public.routes");
+const seoRoutes = require("./routes/seo/seo.routes");
 const { errorHandler } = require("./middlewares/errorHandler.middleware");
 const { UPLOADS_DIR } = require("./utils/localImageStorage.util");
 
@@ -65,6 +66,10 @@ app.get("/health", (req, res) => res.json({ ok: true, time: new Date().toISOStri
 
 app.use("/api/admin", adminRoutes);
 app.use("/api/public", publicRoutes); // no auth - customer site reads from here
+
+// SEO helpers used by Nginx: per-page HTML with title/meta/JSON-LD + crawlable text,
+// the live sitemap.xml and llms.txt. Read-only, never touches customer data.
+app.use("/_seo", seoRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "Route not found.", errors: null });

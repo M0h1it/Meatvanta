@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 
 const SITE_NAME = "Meat Vanta";
-const DEFAULT_TITLE = "Meat Vanta — Fresh Halal Meat Delivered in Gurugram | 35+ Years of Trust";
+const DEFAULT_TITLE = "Fresh Halal Meat Delivery in Gurugram | Meat Vanta";
 const DEFAULT_DESCRIPTION =
-  "Meat Vanta - fresh halal chicken, mutton and kebabs cut every morning and delivered across Gurugram, 6 AM to 11 AM. 35+ years of trust.";
+  "Order fresh halal chicken, mutton and kebabs online. Cut every morning and delivered across Gurugram, 6 AM to 11 AM. 35+ years of trust.";
 const BASE_URL = "https://meatvanta.com";
 
 function setMetaByName(name, content) {
@@ -79,11 +79,11 @@ export function useDocumentMeta({ title, description, path, image } = {}) {
       document.title = DEFAULT_TITLE;
       setMetaByName("description", DEFAULT_DESCRIPTION);
       setCanonical(BASE_URL);
-      setMetaByProperty("og:title", "Meat Vanta — Fresh Halal Meat Delivered in Gurugram");
+      setMetaByProperty("og:title", DEFAULT_TITLE);
       setMetaByProperty("og:description", DEFAULT_DESCRIPTION);
       setMetaByProperty("og:url", BASE_URL);
       setMetaByProperty("og:image", `${BASE_URL}/og-image.webp`);
-      setMetaByName("twitter:title", "Meat Vanta — Fresh Halal Meat Delivered in Gurugram");
+      setMetaByName("twitter:title", DEFAULT_TITLE);
       setMetaByName("twitter:description", DEFAULT_DESCRIPTION);
       setMetaByName("twitter:image", `${BASE_URL}/og-image.webp`);
     };

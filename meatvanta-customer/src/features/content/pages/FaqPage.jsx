@@ -67,13 +67,13 @@ export default function FaqPage() {
     },
     {
       question: "How do I pay?",
-      answer:
-        "Cash on delivery, or UPI. If you pay by UPI you'll see our UPI ID at checkout — pay from any app, then paste the receipt or enter the UTR number. We confirm the payment before preparing your order.",
+      answer: `${
+        availability?.payment?.codEnabled === false ? "" : "Cash on delivery, or "
+      }online payment at checkout (UPI, cards and netbanking via Razorpay). Your order is confirmed as soon as the payment goes through.`,
     },
     {
-      question: "Why does my UPI order say 'payment under review'?",
-      answer:
-        "We check every UPI payment by hand against our own account before starting the order. It's usually quick. Once confirmed, your order moves to preparing and the status updates automatically.",
+      question: "Which areas do you deliver to?",
+      answer: availability?.deliveryAreaNote || "We deliver across Gurugram.",
     },
     {
       question: "Can I change or cancel my order?",

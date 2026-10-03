@@ -6,19 +6,27 @@
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#B4141F" />
 
-    <title>Meat Vanta — Fresh Halal Meat Delivered in Gurugram | 35+ Years of Trust</title>
+    <title>Fresh Halal Meat Delivery in Gurugram | Meat Vanta</title>
     <meta
       name="description"
-      content="Meat Vanta - fresh halal chicken, mutton and kebabs cut every morning and delivered across Gurugram, 6 AM to 11 AM. 35+ years of trust."
+      content="Order fresh halal chicken, mutton and kebabs online. Cut every morning and delivered across Gurugram, 6 AM to 11 AM. 35+ years of trust."
     />
     <link rel="canonical" href="https://meatvanta.com/" />
+    <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable site summary" />
+
+    <!-- Text for crawlers that do not run JavaScript. The server swaps in
+         page-specific text (see backend/src/services/seo); React replaces it
+         on load, so visitors never see it. -->
+    <style>
+      #seo-fallback{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    </style>
 
     <!-- Open Graph / WhatsApp / Facebook share preview -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Meat Vanta" />
     <meta property="og:locale" content="en_IN" />
     <meta property="og:url" content="https://meatvanta.com/" />
-    <meta property="og:title" content="Meat Vanta — Fresh Halal Meat Delivered in Gurugram" />
+    <meta property="og:title" content="Fresh Halal Meat Delivery in Gurugram | Meat Vanta" />
     <meta
       property="og:description"
       content="Fresh halal chicken, mutton and kebabs cut every morning and delivered across Gurugram, 6 AM to 11 AM. 35+ years of trust."
@@ -29,7 +37,7 @@
 
     <!-- Twitter card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Meat Vanta — Fresh Halal Meat Delivered in Gurugram" />
+    <meta name="twitter:title" content="Fresh Halal Meat Delivery in Gurugram | Meat Vanta" />
     <meta
       name="twitter:description"
       content="Fresh halal chicken, mutton and kebabs cut every morning and delivered across Gurugram, 6 AM to 11 AM."
@@ -67,6 +75,9 @@
         "telephone": "+91 92059 55696",
         "priceRange": "₹₹",
         "servesCuisine": "Halal Meat",
+        "areaServed": { "@type": "City", "name": "Gurugram" },
+        "paymentAccepted": "Cash, UPI, Credit Card, Debit Card",
+        "currenciesAccepted": "INR",
         "address": {
           "@type": "PostalAddress",
           "streetAddress": "103/03, Hari Nagar, Sector 10A",
@@ -96,7 +107,21 @@
     </script>
   </head>
   <body class="bg-surface">
-    <div id="root"></div>
+    <div id="root"><article id="seo-fallback">
+      <h1>Fresh halal meat delivered in Gurugram – Meat Vanta</h1>
+      <p>Meat Vanta sells fresh halal chicken, mutton and kebabs, cut to order every morning and delivered across Gurugram between 6 AM and 11 AM. 35+ years of trust. Never frozen.</p>
+      <nav aria-label="Main">
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/shop">Shop fresh meat</a></li>
+          <li><a href="/recipes">Recipes</a></li>
+          <li><a href="/about">About us</a></li>
+          <li><a href="/contact">Contact</a></li>
+          <li><a href="/faq">FAQs</a></li>
+          <li><a href="/delivery">Delivery information</a></li>
+        </ul>
+      </nav>
+    </article></div>
     <!-- Razorpay and the MSG91 OTP widget are no longer loaded here on every
          page: src/lib/externalScripts.js loads them only when needed
          (checkout page / login sheet). -->

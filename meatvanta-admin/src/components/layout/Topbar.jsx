@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
+import { usePermission } from "../../hooks/usePermission";
 import { useNotifications } from "../../hooks/useNotifications";
 import { playNotificationSound } from "../../lib/notificationSound";
 
@@ -17,6 +18,7 @@ function timeAgo(dateString) {
 export default function Topbar() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
+  const { hasPermission } = usePermission();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef(null);
 
@@ -47,7 +49,11 @@ export default function Topbar() {
   function handleNotificationClick(notification) {
     if (!notification.isRead) markRead(notification.id);
     setNotificationsOpen(false);
-    if (notification.entityType === "Order") navigate(notification.entityId ? `/orders/${notification.entityId}` : "/orders");
+    if (notification.entityType === "Order") {
+      // A rider has no access to the shop's order screens - send them to their own list.
+      if (!hasPermission("orders:view")) navigate("/my-deliveries");
+      else navigate(notification.entityId ? `/orders/${notification.entityId}` : "/orders");
+    }
   }
 
   return (

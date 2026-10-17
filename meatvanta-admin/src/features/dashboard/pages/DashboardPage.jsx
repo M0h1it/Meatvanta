@@ -108,11 +108,15 @@ function TodayView() {
     { label: "Pending", icon: "pending_actions", value: stats?.pendingCount },
     { label: "Today's Revenue", icon: "payments", value: stats ? `₹${Number(stats.todayRevenue).toFixed(2)}` : undefined },
     { label: "Total Customers", icon: "group", value: stats?.totalCustomers },
+    // What the shop owes customers in wallet balance (only shown when the API provides it).
+    ...(stats && stats.walletLiability !== undefined
+      ? [{ label: "Wallet Owed", icon: "account_balance_wallet", value: `₹${Number(stats.walletLiability).toFixed(2)}` }]
+      : []),
   ];
 
   return (
     <div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-md mb-lg">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-md mb-lg">
         {statCards.map((card) => (
           <div key={card.label} className="bg-surface-container-lowest rounded-lg border border-outline-variant p-md">
             <span className="material-symbols-outlined text-on-surface-variant">{card.icon}</span>

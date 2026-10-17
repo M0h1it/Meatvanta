@@ -19,7 +19,7 @@ const GROUP_BY = ["day", "week", "month", "year"];
 const DATE_BASIS = ["order", "delivery"];
 const OPEN_STATUSES = ["placed", "preparing", "out_for_delivery"];
 const STATUS_ORDER = ["placed", "preparing", "out_for_delivery", "delivered", "cancelled"];
-const PAYMENT_LABELS = { cod: "Cash on delivery", razorpay: "Online (Razorpay)", upi: "UPI (manual)" };
+const PAYMENT_LABELS = { cod: "Cash on delivery", razorpay: "Online (Razorpay)", upi: "UPI (manual)", wallet: "Customer wallet" };
 
 const MAX_BUCKETS = 400; // e.g. a little over a year of days
 const MAX_RANGE_DAYS = 3660; // ~10 years

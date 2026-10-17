@@ -16,6 +16,8 @@ const analyticsRoutes = require("./analytics/analytics.routes");
 const bannersRoutes = require("./banners/banners.routes");
 const couponsRoutes = require("./coupons/coupons.routes");
 const recipesRoutes = require("./recipes/recipes.routes");
+const deliveryRoutes = require("./delivery/delivery.routes");
+const walletRoutes = require("./wallet/wallet.routes");
 
 router.use("/auth", authRoutes);
 router.use("/roles", rolesRoutes);
@@ -32,5 +34,7 @@ router.use("/analytics", analyticsRoutes);
 router.use("/banners", bannersRoutes);
 router.use("/coupons", couponsRoutes);
 router.use("/recipes", recipesRoutes);
+router.use("/delivery", deliveryRoutes);
+router.use("/wallet", walletRoutes);
 
 module.exports = router;

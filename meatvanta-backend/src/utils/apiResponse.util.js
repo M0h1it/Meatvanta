@@ -3,6 +3,9 @@ function success(res, statusCode, message, data = null) {
     success: true,
     message,
     data,
+    // The server's own clock. The customer site uses it to hide offers at the exact
+    // moment they end even when the visitor's phone clock is wrong.
+    serverTime: new Date().toISOString(),
   });
 }
 

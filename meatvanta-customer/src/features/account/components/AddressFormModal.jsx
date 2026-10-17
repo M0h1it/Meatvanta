@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createAddress, updateAddress } from "../api/addressesApi";
+import MapPinPicker from "../../../components/common/MapPinPicker";
 
 const LABEL_OPTIONS = ["Home", "Work", "Other"];
 
@@ -17,6 +18,12 @@ export default function AddressFormModal({ isOpen, onClose, onSaved, existingAdd
     pincode: existingAddress?.pincode || "",
     isDefault: existingAddress?.isDefault ?? false,
   }));
+  // Exact map pin (optional). Saved addresses carry it as latitude/longitude.
+  const [pin, setPin] = useState(() =>
+    existingAddress?.latitude != null && existingAddress?.longitude != null
+      ? { latitude: Number(existingAddress.latitude), longitude: Number(existingAddress.longitude) }
+      : null
+  );
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
@@ -35,6 +42,9 @@ export default function AddressFormModal({ isOpen, onClose, onSaved, existingAdd
         area: form.area || undefined,
         pincode: form.pincode || undefined,
         isDefault: form.isDefault,
+        // null clears a pin that was removed while editing; new addresses just send null.
+        latitude: pin ? pin.latitude : null,
+        longitude: pin ? pin.longitude : null,
       };
       const saved = isEditing
         ? await updateAddress(existingAddress.id, payload)
@@ -134,6 +144,11 @@ export default function AddressFormModal({ isOpen, onClose, onSaved, existingAdd
               />
               {fieldErrors.pincode && <p className="text-xs text-brand mt-1">{fieldErrors.pincode}</p>}
             </div>
+          </div>
+
+          <div className="mt-4">
+            <MapPinPicker value={pin} onChange={setPin} />
+            {fieldErrors.latitude && <p className="text-xs text-brand mt-1">{fieldErrors.latitude}</p>}
           </div>
 
           <label className="flex items-center gap-2 mt-4 text-sm text-ink">

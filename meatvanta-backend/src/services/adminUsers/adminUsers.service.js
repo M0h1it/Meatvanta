@@ -28,10 +28,17 @@ async function createAdminUser({ name, email, password, roleId, phone }) {
   const existing = await prisma.adminUser.findUnique({ where: { email } });
   if (existing) throw conflictError("An admin with this email already exists.");
 
+  const cleanPhone = phone ? String(phone).trim() : null;
+  if (cleanPhone) {
+    // phone is @unique in the schema - answer 409 instead of letting the DB error become a 500.
+    const phoneTaken = await prisma.adminUser.findUnique({ where: { phone: cleanPhone } });
+    if (phoneTaken) throw conflictError("An admin with this phone number already exists.");
+  }
+
   const passwordHash = await hashPassword(password);
 
   const admin = await prisma.adminUser.create({
-    data: { name: name.trim(), email, passwordHash, roleId, phone: phone ? String(phone).trim() : null },
+    data: { name: name.trim(), email, passwordHash, roleId, phone: cleanPhone },
     include: adminInclude,
   });
 
@@ -52,7 +59,7 @@ async function getAdminUserById(id) {
   return stripPasswordHash(admin);
 }
 
-async function updateAdminUser(id, { name, roleId, isActive }, actingAdminId) {
+async function updateAdminUser(id, { name, roleId, isActive, phone }, actingAdminId) {
   const existing = await prisma.adminUser.findUnique({ where: { id }, include: { role: true } });
   if (!existing) throw notFoundError("Admin user not found.");
 
@@ -84,7 +91,14 @@ async function updateAdminUser(id, { name, roleId, isActive }, actingAdminId) {
   if (name !== undefined) data.name = name.trim();
   if (roleId !== undefined) data.roleId = roleId;
   if (isActive !== undefined) data.isActive = isActive;
-  if (phone !== undefined) data.phone = phone ? String(phone).trim() : null;
+  if (phone !== undefined) {
+    const cleanPhone = phone ? String(phone).trim() : null;
+    if (cleanPhone) {
+      const phoneTaken = await prisma.adminUser.findUnique({ where: { phone: cleanPhone } });
+      if (phoneTaken && phoneTaken.id !== id) throw conflictError("An admin with this phone number already exists.");
+    }
+    data.phone = cleanPhone;
+  }
 
   const updated = await prisma.adminUser.update({ where: { id }, data, include: adminInclude });
   return stripPasswordHash(updated);

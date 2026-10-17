@@ -57,6 +57,32 @@ async function verifyOtp(req, res, next) {
   }
 }
 
+function isLoopback(ip = "") {
+  return ip === "::1" || ip === "127.0.0.1" || ip === "::ffff:127.0.0.1";
+}
+
+/**
+ * LOCAL ONLY (see customerAuth.service.js devLogin). Answers 404 - exactly like
+ * an unknown route - unless dev login is switched on AND the request came from
+ * this machine, so on the live server it is invisible.
+ */
+async function devLogin(req, res, next) {
+  try {
+    const socketIp = req.socket?.remoteAddress || "";
+    // Behind a proxy (production) a forwarded header is present; locally there is none.
+    const forwarded = req.headers["x-forwarded-for"] || req.headers["cf-connecting-ip"];
+    if (!customerAuthService.isDevLoginEnabled() || forwarded || !isLoopback(socketIp)) {
+      return failure(res, 404, "Route not found.");
+    }
+    const { customer, tokens, isNewCustomer } = await customerAuthService.devLogin(req.body || {});
+    setSessionCookies(res, tokens);
+    return success(res, 200, "Signed in (dev).", { customer, isNewCustomer });
+  } catch (err) {
+    if (err.expose) return failure(res, err.statusCode, err.message);
+    return next(err);
+  }
+}
+
 async function refresh(req, res, next) {
   try {
     const refreshToken = req.cookies?.[CUSTOMER_REFRESH_COOKIE];
@@ -90,4 +116,4 @@ async function me(req, res, next) {
   }
 }
 
-module.exports = { verifyOtp, refresh, logout, me };
+module.exports = { verifyOtp, devLogin, refresh, logout, me };

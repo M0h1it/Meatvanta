@@ -4,8 +4,10 @@ import { usePermission } from "../../hooks/usePermission";
 // Mirrors Sidebar's items - mobile gets icon-only bottom nav instead of a
 // collapsible drawer, simplest touch-friendly pattern for a small nav set.
 const NAV_ITEMS = [
-  { label: "Home", to: "/", icon: "dashboard", permission: null },
+  { label: "Home", to: "/", icon: "dashboard", permission: "orders:view" },
+  { label: "Deliveries", to: "/my-deliveries", icon: "moped", permission: "delivery:view" },
   { label: "Orders", to: "/orders", icon: "receipt_long", permission: "orders:view" },
+  { label: "Board", to: "/delivery-board", icon: "pin_drop", permission: "orders:view" },
   { label: "Categories", to: "/categories", icon: "category", permission: "categories:view" },
   { label: "Products", to: "/products", icon: "inventory_2", permission: "products:view" },
   { label: "Settings", to: "/settings", icon: "settings", permission: null },

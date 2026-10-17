@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { fetchMyOrder } from "../api/ordersApi";
-import { formatWindow, formatDate, formatRupees } from "../../../lib/format";
+import { formatWindow, formatDate, formatRupees, formatDateTime } from "../../../lib/format";
 
 // 15s - the customer is often watching this screen while waiting, so a
 // shorter interval is worth the extra requests. Only polls while the tab is
@@ -14,6 +14,13 @@ const STATUS_STEPS = [
   { key: "out_for_delivery", label: "Out for Delivery", icon: "moped" },
   { key: "delivered", label: "Delivered", icon: "check_circle" },
 ];
+
+const PAYMENT_METHOD_LABELS = {
+  cod: "Cash on delivery",
+  razorpay: "Paid online",
+  upi: "UPI",
+  wallet: "Meat Vanta wallet",
+};
 
 const PAYMENT_LABELS = {
   unpaid: "Pay on delivery",
@@ -133,7 +140,18 @@ export default function MyOrderDetailPage() {
                     {step.key === "out_for_delivery" && isDone && order.deliveryPersonName && (
                       <p className="text-xs text-ink/60">
                         <span className="font-semibold text-ink">{order.deliveryPersonName}</span> is on the way
+                        {order.deliveryPersonPhone && order.status === "out_for_delivery" && (
+                          <>
+                            {" · "}
+                            <a href={`tel:${order.deliveryPersonPhone}`} className="font-semibold text-brand underline">
+                              Call {order.deliveryPersonPhone}
+                            </a>
+                          </>
+                        )}
                       </p>
+                    )}
+                    {step.key === "delivered" && isDone && order.deliveredAt && (
+                      <p className="text-xs text-ink/60">{formatDateTime(order.deliveredAt)}</p>
                     )}
                     {isCurrent && <p className="text-xs text-brand-dark font-medium">Current status</p>}
                   </div>
@@ -164,19 +182,44 @@ export default function MyOrderDetailPage() {
           <div className="flex items-center gap-2 mt-3 pt-3 border-t border-hairline">
             <span className="material-symbols-outlined text-base text-brand-dark">moped</span>
             <p className="text-sm text-ink/70">
-              Delivered by <span className="font-semibold text-ink">{order.deliveryPersonName}</span>
+              {order.status === "delivered" ? "Delivered by" : "Delivery by"}{" "}
+              <span className="font-semibold text-ink">{order.deliveryPersonName}</span>
+              {order.status === "delivered" && order.deliveredAt && ` · ${formatDateTime(order.deliveredAt)}`}
             </p>
           </div>
         )}
+
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-hairline">
+          <span className="material-symbols-outlined text-base text-brand-dark">payments</span>
+          <p className="text-sm text-ink/70">
+            <span className="font-semibold text-ink">{PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}</span>
+            {" · "}
+            {order.paymentStatus === "paid" || order.paymentStatus === "verified"
+              ? `Paid${order.paymentVerifiedAt ? ` on ${formatDateTime(order.paymentVerifiedAt)}` : ""}`
+              : order.paymentMethod === "cod"
+                ? "Pay the delivery boy on delivery"
+                : PAYMENT_LABELS[order.paymentStatus] || order.paymentStatus}
+          </p>
+        </div>
       </div>
 
       <div className="bg-white rounded border border-hairline p-5">
         <h2 className="font-bold text-ink mb-3">Items</h2>
-        {order.items?.map((item) => (
+        {order.items?.map((item) => {
+          const ordered = item.orderedQuantity ?? item.quantity;
+          const missing = ordered - item.quantity;
+          return (
           <div key={item.id} className="flex justify-between text-sm mb-1.5">
-            <span className="text-ink/70">
-              {item.quantity}× {item.productName}{" "}
+            <span className={item.quantity === 0 ? "text-ink/40 line-through" : "text-ink/70"}>
+              {item.quantity === 0 ? ordered : item.quantity}× {item.productName}{" "}
               <span className="text-ink/50">({item.variantLabel})</span>
+              {missing > 0 && (
+                <span className="block text-xs font-semibold text-brand no-underline">
+                  {item.quantity === 0
+                    ? "Not available - not included in this order"
+                    : `Only ${item.quantity} of ${ordered} available`}
+                </span>
+              )}
               {item.selectedOptions?.length > 0 && (
                 <span className="block text-xs text-brand-dark">
                   {item.selectedOptions.map((o) => o.optionName).join(", ")}
@@ -190,13 +233,20 @@ export default function MyOrderDetailPage() {
             </span>
             <span className="font-semibold text-ink">{formatRupees(item.lineTotal)}</span>
           </div>
-        ))}
+          );
+        })}
 
         <div className="border-t border-hairline mt-3 pt-3 space-y-1.5">
           <div className="flex justify-between text-sm">
             <span className="text-ink/70">Subtotal</span>
             <span className="font-semibold text-ink">{formatRupees(order.subtotal)}</span>
           </div>
+          {Number(order.unavailableAmount) > 0 && !isCancelled && (
+            <div className="flex justify-between text-sm text-brand">
+              <span>Items not available</span>
+              <span className="font-semibold">−{formatRupees(order.unavailableAmount)}</span>
+            </div>
+          )}
           {Number(order.discount) > 0 && (
             <div className="flex justify-between text-sm text-success">
               <span>
@@ -221,6 +271,39 @@ export default function MyOrderDetailPage() {
           <span className="font-bold text-ink">Total</span>
           <span className="text-2xl font-bold text-ink">{formatRupees(order.total)}</span>
         </div>
+
+        {Number(order.walletUsed) > 0 && order.paymentMethod !== "wallet" && (
+          <div className="mt-2 space-y-1">
+            <div className="flex justify-between text-sm text-success">
+              <span>Paid from wallet</span>
+              <span className="font-semibold">−{formatRupees(order.walletUsed)}</span>
+            </div>
+            {order.paymentMethod === "cod" && order.paymentStatus !== "paid" && order.status !== "cancelled" && (
+              <div className="flex justify-between text-sm">
+                <span className="font-bold text-ink">To pay on delivery</span>
+                <span className="font-bold text-ink">{formatRupees(Math.max(0, Number(order.total) - Number(order.walletUsed)))}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {order.paymentMethod === "wallet" && (
+          <p className="mt-2 text-xs text-ink/60">This order was paid from your Meat Vanta wallet.</p>
+        )}
+
+        {Number(order.walletCredited) > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded bg-success/10 border border-success/20 px-3 py-2">
+            <span className="material-symbols-outlined text-success text-lg">account_balance_wallet</span>
+            <p className="text-sm text-ink">
+              <span className="font-bold">{formatRupees(order.walletCredited)}</span> was added to your Meat Vanta wallet
+              {isCancelled ? " for this cancelled order" : " for the items we could not send"}.
+            </p>
+          </div>
+        )}
+        {Number(order.unavailableAmount) > 0 && Number(order.walletCredited) === 0 && !isCancelled && (
+          <p className="mt-3 text-xs text-ink/60">
+            Some items were not available, so they were taken off your bill. You only pay for what we deliver.
+          </p>
+        )}
       </div>
 
       <Link to="/shop" className="block text-center mt-5 text-sm font-bold text-brand-dark underline">

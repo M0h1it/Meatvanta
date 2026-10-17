@@ -24,6 +24,7 @@ const SYSTEM_ROLES = [
       "notifications:*",
       "customers:view",
       "shop_info:*",
+      "delivery:*",
     ],
   },
   {

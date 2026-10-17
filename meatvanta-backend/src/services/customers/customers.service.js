@@ -1,4 +1,5 @@
 const prisma = require("../../config/db");
+const walletService = require("../wallet/wallet.service");
 
 function notFoundError(message = "Customer not found.") {
   const err = new Error(message);
@@ -139,6 +140,9 @@ async function getCustomerById(id) {
   );
   const totalSpent = countableOrders.reduce((sum, o) => sum + Number(o.total), 0);
 
+  // Store credit tied to this customer's phone number (what the shop owes them).
+  const wallet = await walletService.getWallet(customer.phone, { limit: 30, includeHolds: true });
+
   return {
     id: customer.id,
     name: customer.name,
@@ -149,6 +153,7 @@ async function getCustomerById(id) {
     lastLoginAt: customer.lastLoginAt,
     addresses: customer.addresses,
     orders: customer.orders,
+    wallet: { balance: wallet.balance, held: wallet.held, transactions: wallet.transactions },
     stats: {
       orderCount: allOrdersForStats.length,
       totalSpent,

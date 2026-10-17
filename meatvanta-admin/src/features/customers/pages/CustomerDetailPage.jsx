@@ -118,6 +118,38 @@ export default function CustomerDetailPage() {
         </div>
       </div>
 
+      {/* Wallet: store credit tied to this phone number (what the shop owes the customer) */}
+      {customer.wallet && (customer.wallet.balance > 0 || customer.wallet.transactions.length > 0) && (
+        <section className="bg-surface-container-lowest rounded-lg border border-outline-variant p-md mb-lg">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <h2 className="font-headline-sm text-headline-sm text-on-surface">Wallet</h2>
+            <p className="text-sm text-on-surface-variant">
+              Balance <span className="font-bold text-on-surface text-lg">₹{Number(customer.wallet.balance).toFixed(2)}</span>
+            </p>
+          </div>
+          {customer.wallet.transactions.length > 0 && (
+            <ul className="divide-y divide-outline-variant text-sm">
+              {customer.wallet.transactions.map((t) => (
+                <li key={t.id} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-on-surface">
+                    {t.reason}
+                    <span className="block text-xs text-on-surface-variant">
+                      {new Date(t.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}
+                    </span>
+                  </span>
+                  <span className={t.type === "credit" || t.type === "release" ? "font-semibold text-primary" : "font-semibold text-on-surface"}>
+                    {t.type === "credit" || t.type === "release" ? "+" : "−"}₹{Number(t.amount).toFixed(2)}
+                    <span className="block text-xs font-normal text-on-surface-variant text-right">
+                      balance ₹{Number(t.balanceAfter).toFixed(2)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       {/* Month-wise activity */}
       {monthlyStats.length > 0 && (
         <section className="bg-surface-container-lowest rounded-lg border border-outline-variant p-md mb-lg">

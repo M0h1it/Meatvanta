@@ -116,6 +116,23 @@ function validatePublicCreateOrder(body) {
   if (!CUSTOMER_PAYMENT_METHODS.includes(paymentMethod)) {
     errors.paymentMethod = `Please choose a payment method (${CUSTOMER_PAYMENT_METHODS.join(" or ")}).`;
   }
+  // Optional map pin from the customer's saved address. Both numbers or neither.
+  const { deliveryLatitude, deliveryLongitude } = body || {};
+  const hasLat = deliveryLatitude !== undefined && deliveryLatitude !== null && deliveryLatitude !== "";
+  const hasLng = deliveryLongitude !== undefined && deliveryLongitude !== null && deliveryLongitude !== "";
+  if (hasLat || hasLng) {
+    const lat = Number(deliveryLatitude);
+    const lng = Number(deliveryLongitude);
+    if (!hasLat || !hasLng || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      errors.deliveryLatitude = "The map pin on this address is not valid.";
+    }
+  }
+  // Optional. true = pay as much of the bill as possible from the signed-in customer's
+  // wallet. How much that is gets worked out on the server.
+  const { useWallet } = body || {};
+  if (useWallet !== undefined && typeof useWallet !== "boolean") {
+    errors.useWallet = "useWallet must be true or false.";
+  }
   // Optional. Only the code is accepted - the discount is always worked out on the server.
   const { couponCode } = body || {};
   if (couponCode !== undefined && couponCode !== null && couponCode !== "") {

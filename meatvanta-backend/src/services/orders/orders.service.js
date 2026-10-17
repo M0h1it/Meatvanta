@@ -7,6 +7,7 @@ const ist = require("../../utils/istDate.util");
 const couponsService = require("../coupons/coupons.service");
 const combosService = require("../combos/combos.service");
 const newCustomerOffer = require("../newCustomerOffer/newCustomerOffer.service");
+const wallet = require("../wallet/wallet.service");
 
 function notFoundError(message) {
   const err = new Error(message);
@@ -19,6 +20,30 @@ function badRequestError(message) {
   err.statusCode = 400;
   err.expose = true;
   return err;
+}
+
+/**
+ * Two transactions that touch the same wallet row at the same moment (a customer double
+ * tapping, or two devices) can make MySQL abort one of them with a deadlock (Prisma P2034).
+ * An aborted transaction wrote nothing, so running it again is safe: it either succeeds or
+ * fails cleanly (e.g. "balance not enough") because the first one has finished by then.
+ */
+async function retryOnConflict(run, attempts = 3) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (err) {
+      const isConflict = err?.code === "P2034" || /deadlock|write conflict/i.test(String(err?.message || ""));
+      if (!isConflict) throw err;
+      if (attempt >= attempts) {
+        const busy = new Error("Your order is being processed at the same time as another one. Please try again.");
+        busy.statusCode = 409;
+        busy.expose = true;
+        throw busy;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 40 * attempt));
+    }
+  }
 }
 
 /**
@@ -91,6 +116,7 @@ async function resolveSelectedOptions(optionIds, productId) {
 const orderInclude = {
   items: true,
   createdByAdmin: { select: { id: true, name: true } },
+  deliveryAdmin: { select: { id: true, name: true, phone: true } },
 };
 
 /**
@@ -136,6 +162,7 @@ async function createOrder({ customerName, customerPhone, deliveryAddress, items
       optionsTotal,
       comboItems: comboContents.get(variant.productId),
       quantity: item.quantity,
+      orderedQuantity: item.quantity,
       lineTotal: (unitPrice + optionsTotal) * item.quantity,
     });
   }
@@ -173,9 +200,30 @@ async function createOrder({ customerName, customerPhone, deliveryAddress, items
   return order;
 }
 
-async function listOrders({ status, search, page = 1, pageSize = 25 } = {}) {
+async function listOrders({
+  status, search, riderId, paymentMethod, paymentStatus, from, to, page = 1, pageSize = 25,
+} = {}) {
   const where = {};
-  if (status) where.status = status;
+  // "active" = everything still in motion; otherwise one status or a comma list.
+  if (status === "active") {
+    where.status = { in: ["placed", "preparing", "out_for_delivery"] };
+  } else if (status) {
+    const list = String(status).split(",").map((s) => s.trim()).filter(Boolean);
+    where.status = list.length > 1 ? { in: list } : list[0];
+  }
+
+  // "none" = no rider yet; a number = that rider.
+  if (riderId === "none") where.deliveryAdminId = null;
+  else if (Number.isInteger(Number(riderId)) && Number(riderId) > 0) where.deliveryAdminId = Number(riderId);
+
+  if (paymentMethod) where.paymentMethod = paymentMethod;
+  if (paymentStatus) where.paymentStatus = paymentStatus;
+
+  // Date range on the order date, in India time (to = the whole of that day).
+  const range = {};
+  if (from && ist.isValidDateKey(from)) range.gte = ist.startOfIstDay(from);
+  if (to && ist.isValidDateKey(to)) range.lt = ist.startOfIstDay(ist.addDays(to, 1));
+  if (range.gte || range.lt) where.createdAt = range;
 
   // One box, three things staff actually search by at the counter.
   const trimmedSearch = typeof search === "string" ? search.trim() : "";
@@ -209,7 +257,7 @@ async function getOrderById(id) {
   return order;
 }
 
-async function updateOrderStatus(id, requestedStatus) {
+async function updateOrderStatus(id, requestedStatus, actingAdminId = null) {
   const existing = await prisma.order.findUnique({ where: { id } });
   if (!existing) throw notFoundError("Order not found.");
 
@@ -219,13 +267,18 @@ async function updateOrderStatus(id, requestedStatus) {
   const data = { status: requestedStatus };
   if (requestedStatus === "delivered") {
     data.deliveredAt = new Date(); // lets analytics count the sale on its delivery day
-    if (existing.paymentMethod === "cod") data.paymentStatus = "paid"; // COD collected on delivery
+    if (existing.paymentMethod === "cod") {
+      data.paymentStatus = "paid"; // COD collected on delivery
+      data.paymentVerifiedAt = new Date(); // = the moment the cash was collected
+    }
   }
 
   if (requestedStatus === "cancelled") {
-    // A cancelled order gives its coupon use back to the customer.
+    // A cancelled order gives its coupon use back to the customer, and whatever the
+    // customer already paid (online or from the wallet) goes to their wallet.
     return prisma.$transaction(async (tx) => {
       await couponsService.releaseRedemption(tx, id);
+      await wallet.creditForCancel(tx, existing, actingAdminId);
       return tx.order.update({ where: { id }, data, include: orderInclude });
     });
   }
@@ -233,8 +286,8 @@ async function updateOrderStatus(id, requestedStatus) {
   return prisma.order.update({ where: { id }, data, include: orderInclude });
 }
 
-async function cancelOrder(id) {
-  return updateOrderStatus(id, "cancelled");
+async function cancelOrder(id, actingAdminId = null) {
+  return updateOrderStatus(id, "cancelled", actingAdminId);
 }
 
 /** Powers the admin dashboard's stat cards - counts only, cheap to compute. */
@@ -257,7 +310,10 @@ async function getDashboardStats() {
 
   const todayRevenue = todayDelivered.reduce((sum, o) => sum + Number(o.total), 0);
 
-  return { todayOrdersCount: todayOrders, pendingCount, todayRevenue, totalCustomers };
+  // What the shop owes its customers in wallet balance (spendable + reserved for a payment).
+  const walletLiability = await wallet.totalLiability();
+
+  return { todayOrdersCount: todayOrders, pendingCount, todayRevenue, totalCustomers, walletLiability };
 }
 
 /**
@@ -311,6 +367,7 @@ async function priceCheckoutItems(items) {
       optionsTotal,
       comboItems: comboContents.get(variant.productId),
       quantity: item.quantity,
+      orderedQuantity: item.quantity,
       lineTotal: (unitPrice + optionsTotal) * item.quantity,
     });
     lines.push({
@@ -438,6 +495,16 @@ async function notifyNewOrder(order) {
   });
 }
 
+/** A map pin is either both numbers in range, or nothing - never half a pin. */
+function normalisePin(latitude, longitude) {
+  const lat = latitude === null || latitude === undefined || latitude === "" ? NaN : Number(latitude);
+  const lng = longitude === null || longitude === undefined || longitude === "" ? NaN : Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    return { latitude: null, longitude: null };
+  }
+  return { latitude: lat, longitude: lng };
+}
+
 /**
  * Customer-site order creation. Differs from the admin path in three ways:
  *  - re-validates the delivery date against current settings (it may have
@@ -449,23 +516,21 @@ async function notifyNewOrder(order) {
  *    the priced draft is stashed in PendingCheckout and only becomes a real
  *    Order once payment is actually confirmed (see promotePendingCheckout).
  */
-async function createPublicOrder(payload, customerId = null) {
+async function createPublicOrder(payload, customerId = null, accountPhone = null) {
   const {
     customerName, customerPhone, deliveryAddress, deliveryDate,
     items, paymentMethod, notes, couponCode,
   } = payload;
+  const useWallet = payload.useWallet === true;
+  const pin = normalisePin(payload.deliveryLatitude, payload.deliveryLongitude);
+
+  // The wallet is only for a signed-in customer: their phone number was verified with an OTP,
+  // so nobody can spend someone else's balance by typing their number into a guest checkout.
+  if (useWallet && !customerId) {
+    throw badRequestError("Sign in to use your wallet.");
+  }
 
   const settings = await deliverySettingsService.getSettings();
-
-  if (paymentMethod === "cod" && !settings.codEnabled) {
-    throw badRequestError("Cash on delivery isn't available right now.");
-  }
-  // The existing "upiEnabled" toggle in Delivery Settings now gates the
-  // Razorpay ("Pay Online") option too - it still means "is online/non-COD
-  // payment available today", just via a gateway instead of a manual UPI ID.
-  if (paymentMethod === "razorpay" && !settings.upiEnabled) {
-    throw badRequestError("Online payment isn't available right now.");
-  }
 
   const dateStillValid = await deliverySettingsService.isDateSelectable(deliveryDate);
   if (!dateStillValid) {
@@ -489,7 +554,7 @@ async function createPublicOrder(payload, customerId = null) {
   });
   const deliveryCharge = applied.deliveryCharge;
   const discount = applied.discount;
-  const total = subtotal + deliveryCharge - discount;
+  const total = wallet.round2(subtotal + deliveryCharge - discount);
   // A welcome offer has no coupon row - only its label is saved on the order.
   const couponFields = applied.coupon
     ? { couponId: applied.coupon.id, couponCode: applied.coupon.code, freeDelivery: applied.freeDelivery }
@@ -497,8 +562,46 @@ async function createPublicOrder(payload, customerId = null) {
       ? { couponCode: newCustomerOffer.WELCOME_CODE }
       : {};
 
-  if (paymentMethod === "cod") {
-    const order = await prisma.$transaction(async (tx) => {
+  // ---- wallet: how much of the bill it pays (the server decides, never the browser) ----
+  let walletKey = null;
+  let walletApplied = 0;
+  if (useWallet) {
+    walletKey = wallet.normalizePhone(accountPhone);
+    if (walletKey.length !== 10) {
+      throw badRequestError("Your account needs a valid phone number to use the wallet.");
+    }
+    walletApplied = wallet.round2(Math.max(0, Math.min(await wallet.getBalance(walletKey), total)));
+    // Razorpay cannot charge less than Rs.1, so keep Rs.1 for the gateway if the wallet is nearly enough.
+    if (walletApplied > 0 && walletApplied < total && paymentMethod === "razorpay" && total - walletApplied < 1) {
+      walletApplied = wallet.round2(Math.max(0, total - 1));
+    }
+  }
+  const fullByWallet = walletApplied > 0 && walletApplied >= total;
+  const payable = wallet.round2(total - walletApplied);
+
+  // Only the way the REST is paid has to be switched on. A bill the wallet covers entirely
+  // needs neither cash nor the gateway.
+  if (!fullByWallet) {
+    if (paymentMethod === "cod" && !settings.codEnabled) {
+      throw badRequestError("Cash on delivery isn't available right now.");
+    }
+    // The existing "upiEnabled" toggle in Delivery Settings now gates the
+    // Razorpay ("Pay Online") option too - it still means "is online/non-COD
+    // payment available today", just via a gateway instead of a manual UPI ID.
+    if (paymentMethod === "razorpay" && !settings.upiEnabled) {
+      throw badRequestError("Online payment isn't available right now.");
+    }
+  }
+
+  // ---- paid by the wallet entirely, or cash on delivery (with or without a wallet part) ----
+  if (fullByWallet || paymentMethod === "cod") {
+    // Flat charge: nothing is left to pay, so the order is "paid by wallet". In manual charge
+    // mode the delivery charge is still to be set, so it stays a COD order whose cash due is
+    // whatever the wallet did not cover (the charge, once it is set).
+    const method = fullByWallet && isFlatCharge ? "wallet" : "cod";
+    const isPaidNow = method === "wallet";
+
+    const order = await retryOnConflict(() => prisma.$transaction(async (tx) => {
       const created = await tx.order.create({
         data: {
           orderNumber: "PENDING",
@@ -506,12 +609,16 @@ async function createPublicOrder(payload, customerId = null) {
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
           deliveryAddress: deliveryAddress.trim(),
+          deliveryLatitude: pin.latitude,
+          deliveryLongitude: pin.longitude,
           deliveryDate: new Date(`${deliveryDate}T00:00:00`),
           deliveryStartTime: settings.deliveryStartTime,
           deliveryEndTime: settings.deliveryEndTime,
           deliveryChargeStatus: isFlatCharge ? "confirmed" : "pending",
-          paymentMethod,
-          paymentStatus: "unpaid", // collected on delivery
+          paymentMethod: method,
+          paymentStatus: isPaidNow ? "paid" : "unpaid", // cod: collected on delivery
+          paymentVerifiedAt: isPaidNow ? new Date() : null,
+          walletUsed: walletApplied,
           subtotal,
           deliveryCharge,
           discount,
@@ -535,12 +642,25 @@ async function createPublicOrder(payload, customerId = null) {
         });
       }
 
+      const orderNumber = `ORD-${1000 + created.id}`;
+      // In the same transaction as the order: if the balance is no longer there (a parallel
+      // checkout spent it), this throws and the order is not created at all.
+      if (walletApplied > 0) {
+        await wallet.debit(tx, {
+          phone: walletKey,
+          amount: walletApplied,
+          orderId: created.id,
+          orderNumber,
+          reason: `Used on order ${orderNumber}`,
+        });
+      }
+
       return tx.order.update({
         where: { id: created.id },
-        data: { orderNumber: `ORD-${1000 + created.id}` },
+        data: { orderNumber },
         include: orderInclude,
       });
-    });
+    }));
 
     await notifyNewOrder(order);
     return { order, razorpayKeyId: null, razorpayOrderId: null, amount: null };
@@ -549,44 +669,58 @@ async function createPublicOrder(payload, customerId = null) {
   // paymentMethod === "razorpay": open the gateway order, but do NOT create
   // our own Order row yet - only a PendingCheckout holding everything needed
   // to build it later. Nothing here is visible to the shop until paid.
+  // The gateway is asked for the bill minus the wallet part.
   const razorpayOrder = await razorpayService.createRazorpayOrder({
-    amountInRupees: total,
+    amountInRupees: payable,
     receipt: `checkout-${Date.now()}`,
     notes: { customerPhone: customerPhone.trim() },
   });
 
-  await prisma.pendingCheckout.create({
-    data: {
-      razorpayOrderId: razorpayOrder.id,
-      customerId,
-      amount: total,
-      payload: {
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        deliveryAddress: deliveryAddress.trim(),
-        deliveryDate,
-        notes: notes ? notes.trim() : null,
-        lineItems,
-        subtotal,
-        deliveryCharge,
-        discount,
-        total,
-        isFlatCharge,
-        couponId: applied.coupon ? applied.coupon.id : null,
-        couponCode: applied.coupon ? applied.coupon.code : applied.welcome ? newCustomerOffer.WELCOME_CODE : null,
-        freeDelivery: applied.freeDelivery,
-        couponSavings: applied.savings,
-        deliveryStartTime: settings.deliveryStartTime,
-        deliveryEndTime: settings.deliveryEndTime,
+  await retryOnConflict(() => prisma.$transaction(async (tx) => {
+    // Reserve the wallet part while the payment window is open (released again after ~20
+    // minutes if it is never paid - see wallet.releaseExpiredHolds).
+    if (walletApplied > 0) {
+      await wallet.hold(tx, { phone: walletKey, amount: walletApplied, reason: "Reserved for an online payment" });
+    }
+    await tx.pendingCheckout.create({
+      data: {
+        razorpayOrderId: razorpayOrder.id,
+        customerId,
+        amount: payable,
+        walletPhone: walletApplied > 0 ? walletKey : null,
+        walletHold: walletApplied,
+        walletState: walletApplied > 0 ? "held" : null,
+        payload: {
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.trim(),
+          deliveryAddress: deliveryAddress.trim(),
+          deliveryLatitude: pin.latitude,
+          deliveryLongitude: pin.longitude,
+          deliveryDate,
+          notes: notes ? notes.trim() : null,
+          lineItems,
+          subtotal,
+          deliveryCharge,
+          discount,
+          total,
+          walletUsed: walletApplied,
+          isFlatCharge,
+          couponId: applied.coupon ? applied.coupon.id : null,
+          couponCode: applied.coupon ? applied.coupon.code : applied.welcome ? newCustomerOffer.WELCOME_CODE : null,
+          freeDelivery: applied.freeDelivery,
+          couponSavings: applied.savings,
+          deliveryStartTime: settings.deliveryStartTime,
+          deliveryEndTime: settings.deliveryEndTime,
+        },
       },
-    },
-  });
+    });
+  }));
 
   return {
     order: null,
     razorpayOrderId: razorpayOrder.id,
     razorpayKeyId: razorpayService.getPublicKeyId(),
-    amount: total,
+    amount: payable,
   };
 }
 
@@ -675,8 +809,12 @@ async function promotePendingCheckout(razorpayOrderId, razorpayPaymentId) {
   if (!pending) return null;
 
   const d = pending.payload;
+  // Wallet money reserved for this checkout (0 for an ordinary online payment).
+  const reserved = Number(pending.walletHold || 0);
+  let walletShortfall = 0;
 
-  const order = await prisma.$transaction(async (tx) => {
+  const order = await retryOnConflict(() => prisma.$transaction(async (tx) => {
+    walletShortfall = 0; // a retried attempt starts from scratch
     const created = await tx.order.create({
       data: {
         orderNumber: "PENDING",
@@ -684,6 +822,8 @@ async function promotePendingCheckout(razorpayOrderId, razorpayPaymentId) {
         customerName: d.customerName,
         customerPhone: d.customerPhone,
         deliveryAddress: d.deliveryAddress,
+        deliveryLatitude: d.deliveryLatitude ?? null,
+        deliveryLongitude: d.deliveryLongitude ?? null,
         deliveryDate: new Date(`${d.deliveryDate}T00:00:00`),
         deliveryStartTime: d.deliveryStartTime,
         deliveryEndTime: d.deliveryEndTime,
@@ -693,6 +833,7 @@ async function promotePendingCheckout(razorpayOrderId, razorpayPaymentId) {
         razorpayOrderId,
         razorpayPaymentId,
         paymentVerifiedAt: new Date(),
+        walletUsed: reserved,
         subtotal: d.subtotal,
         deliveryCharge: d.deliveryCharge,
         discount: d.discount || 0,
@@ -721,9 +862,57 @@ async function promotePendingCheckout(razorpayOrderId, razorpayPaymentId) {
       }
     }
 
+    const numberNow = `ORD-${1000 + created.id}`;
+
+    // The wallet part: the payment came through, so the reserved money is now really spent.
+    if (reserved > 0) {
+      const flipped = await tx.pendingCheckout.updateMany({
+        where: { id: pending.id, walletState: "held" },
+        data: { walletState: "captured" },
+      });
+      let taken = false;
+      if (flipped.count === 1) {
+        taken = await wallet.captureHold(tx, {
+          phone: pending.walletPhone,
+          amount: reserved,
+          orderId: created.id,
+          orderNumber: numberNow,
+          reason: `Used on order ${numberNow}`,
+        });
+      }
+      if (!taken) {
+        // The payment arrived after the reservation had already been given back (or the
+        // reservation is gone): try to take the amount from the balance now.
+        taken = await wallet.tryDebit(tx, {
+          phone: pending.walletPhone,
+          amount: reserved,
+          orderId: created.id,
+          orderNumber: numberNow,
+          reason: `Used on order ${numberNow}`,
+        });
+      }
+      if (!taken) {
+        // Still not there (the customer spent it elsewhere meanwhile). The online part IS paid,
+        // so the order stands; the missing wallet part is collected in cash on delivery.
+        // `walletUsed` then holds what was paid up front, so cash due = total - walletUsed.
+        walletShortfall = reserved;
+        const paidOnline = wallet.round2(Number(d.total) - reserved);
+        await tx.order.update({
+          where: { id: created.id },
+          data: {
+            paymentMethod: "cod",
+            paymentStatus: "unpaid",
+            paymentVerifiedAt: null,
+            walletUsed: paidOnline,
+            paymentNote: `Paid online Rs.${paidOnline.toFixed(0)}. Rs.${reserved.toFixed(0)} could not be taken from the wallet - collect it in cash on delivery.`,
+          },
+        });
+      }
+    }
+
     const withNumber = await tx.order.update({
       where: { id: created.id },
-      data: { orderNumber: `ORD-${1000 + created.id}` },
+      data: { orderNumber: numberNow },
       include: orderInclude,
     });
 
@@ -731,7 +920,17 @@ async function promotePendingCheckout(razorpayOrderId, razorpayPaymentId) {
     await tx.pendingCheckout.delete({ where: { id: pending.id } });
 
     return withNumber;
-  });
+  }));
+
+  if (walletShortfall > 0) {
+    await notificationsService.createNotification({
+      type: "wallet_shortfall",
+      title: `Collect Rs.${walletShortfall.toFixed(0)} on delivery`,
+      message: `${order.orderNumber}: the wallet part of this order could not be taken (balance changed). Collect Rs.${walletShortfall.toFixed(0)} in cash.`,
+      entityType: "Order",
+      entityId: order.id,
+    });
+  }
 
   await notifyNewOrder(order);
   await notificationsService.createNotification({
@@ -786,7 +985,11 @@ async function setDeliveryCharge(id, deliveryCharge) {
 
   // A free-delivery coupon keeps the charge at 0 whatever amount is entered.
   const charge = existing.freeDelivery ? 0 : Number(deliveryCharge);
-  const total = Number(existing.subtotal) + charge - Number(existing.discount);
+  // Items the shop could not send stay out of the bill (see orderAdjustments.service.js).
+  const total = Math.max(
+    0,
+    Number(existing.subtotal) - Number(existing.unavailableAmount || 0) + charge - Number(existing.discount)
+  );
 
   return prisma.order.update({
     where: { id },
@@ -802,7 +1005,12 @@ async function assignDeliveryPerson(id, deliveryPersonName) {
 
   return prisma.order.update({
     where: { id },
-    data: { deliveryPersonName: deliveryPersonName ? deliveryPersonName.trim() : null },
+    data: {
+      deliveryPersonName: deliveryPersonName ? deliveryPersonName.trim() : null,
+      // A typed name is no longer tied to a rider account.
+      deliveryAdminId: null,
+      deliveryPersonPhone: null,
+    },
     include: orderInclude,
   });
 }
@@ -825,4 +1033,5 @@ module.exports = {
   markOrderPaidFromWebhook,
   setDeliveryCharge,
   assignDeliveryPerson,
+  orderInclude,
 };

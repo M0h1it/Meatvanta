@@ -399,7 +399,34 @@ async function listLiveBanners(now = new Date()) {
   return byPlacement;
 }
 
+/**
+ * The next moment the set of live banners changes: a live banner ending, or a scheduled one
+ * starting. The customer site refreshes at exactly that time instead of waiting for a reload.
+ * null when nothing is scheduled.
+ */
+async function nextBannerChangeAt(now = new Date()) {
+  const [ending, starting] = await Promise.all([
+    prisma.banner.findFirst({
+      where: {
+        isActive: true,
+        endsAt: { gt: now },
+        OR: [{ startsAt: null }, { startsAt: { lte: now } }],
+      },
+      orderBy: { endsAt: "asc" },
+      select: { endsAt: true },
+    }),
+    prisma.banner.findFirst({
+      where: { isActive: true, startsAt: { gt: now } },
+      orderBy: { startsAt: "asc" },
+      select: { startsAt: true },
+    }),
+  ]);
+  const times = [ending?.endsAt, starting?.startsAt].filter(Boolean).map((d) => d.getTime());
+  return times.length ? new Date(Math.min(...times)) : null;
+}
+
 module.exports = {
+  nextBannerChangeAt,
   PLACEMENTS,
   LINK_TYPES,
   DESKTOP_RATIOS,

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchAvailableCoupons } from "../../features/coupons/api/couponsApi";
 import { couponsForProduct } from "../../lib/offers";
 import { useCart } from "../../hooks/useCart";
+import { useLiveItems } from "../../hooks/useLiveItems";
 
 /**
  * "Extra 20% off with MUTTON20" on the product page - only for coupons the
@@ -10,7 +11,8 @@ import { useCart } from "../../hooks/useCart";
  */
 export default function CouponHint({ product, className = "" }) {
   const { couponCode, setCouponCode } = useCart();
-  const [coupons, setCoupons] = useState([]);
+  const [fetched, setCoupons] = useState([]);
+  const coupons = useLiveItems(fetched); // an offer disappears the moment it ends
 
   useEffect(() => {
     fetchAvailableCoupons()

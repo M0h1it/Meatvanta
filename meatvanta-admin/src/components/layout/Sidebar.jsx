@@ -10,13 +10,17 @@ import BrandLogo from "../common/BrandLogo";
 const NAV_GROUPS = [
   {
     title: null,
-    items: [{ label: "Dashboard", to: "/", icon: "dashboard", permission: null }],
+    items: [{ label: "Dashboard", to: "/", icon: "dashboard", permission: "orders:view" }],
   },
   {
     title: "Sales",
     items: [
       { label: "Orders", to: "/orders", icon: "receipt_long", permission: "orders:view" },
       { label: "Customers", to: "/customers", icon: "group", permission: "customers:view" },
+      { label: "All Deliveries", to: "/delivery-board", icon: "pin_drop", permission: "orders:view" },
+      { label: "Rider Cash", to: "/rider-cash", icon: "payments", permission: "delivery:settle" },
+      { label: "Wallet", to: "/wallet", icon: "account_balance_wallet", permission: "reports:view" },
+      { label: "My Deliveries", to: "/my-deliveries", icon: "moped", permission: "delivery:view" },
       { label: "Delivery", to: "/delivery-settings", icon: "local_shipping", permission: "delivery_settings:view" },
     ],
   },

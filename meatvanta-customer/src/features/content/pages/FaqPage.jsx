@@ -82,6 +82,16 @@ export default function FaqPage() {
       }. Since everything is cut fresh to order, we can usually help if the meat hasn't been prepared yet.`,
     },
     {
+      question: "What happens if an item I ordered is not available?",
+      answer:
+        "Sometimes an item runs out right after you order. We deliver the rest of your order. If you had already paid online, the amount for the unavailable item is added to your Meat Vanta wallet. If you chose cash on delivery, it is simply taken off your bill, so you only pay for what we deliver.",
+    },
+    {
+      question: "How does the Meat Vanta wallet work?",
+      answer:
+        "Your wallet is linked to your mobile number. Credits come from items we could not send and from cancelled orders, and they stay in your wallet as balance - they are not returned to your bank account. Sign in with your mobile number to see and use your balance.",
+    },
+    {
       question: "Do I need an account?",
       answer:
         "You can browse and build your cart freely. Signing in with your mobile number is only needed at checkout — it takes one OTP, and it's what lets you track orders and reorder later.",

@@ -1,5 +1,7 @@
 import { lazy, Suspense } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { useAuth } from "./hooks/useAuth";
+import { usePermission } from "./hooks/usePermission";
 import ProtectedRoute from "./components/common/ProtectedRoute";
 import AdminLayout from "./components/layout/AdminLayout";
 
@@ -19,6 +21,10 @@ import OrderDetailPage from "./features/orders/pages/OrderDetailPage";
 import ProductDetailPage from "./features/products/pages/ProductDetailPage";
 import CustomersPage from "./features/customers/pages/CustomersPage";
 import CustomerDetailPage from "./features/customers/pages/CustomerDetailPage";
+import MyDeliveriesPage from "./features/delivery/pages/MyDeliveriesPage";
+import DeliveryBoardPage from "./features/delivery/pages/DeliveryBoardPage";
+import RiderCashPage from "./features/delivery/pages/RiderCashPage";
+import WalletPage from "./features/wallet/pages/WalletPage";
 
 // Loaded on first visit to keep the main bundle small.
 const BannersPage = lazy(() => import("./features/banners/pages/BannersPage"));
@@ -26,6 +32,16 @@ const CouponsPage = lazy(() => import("./features/coupons/pages/CouponsPage"));
 const RecipesPage = lazy(() => import("./features/recipes/pages/RecipesPage"));
 const RecipeEditorPage = lazy(() => import("./features/recipes/pages/RecipeEditorPage"));
 const pageFallback = <p className="text-sm text-on-surface-variant">Loading…</p>;
+
+// A delivery rider (has delivery access, cannot see orders) lands on their own page, not the shop dashboard.
+function HomeRoute() {
+  const { admin } = useAuth();
+  const { hasPermission } = usePermission();
+  if (admin && !hasPermission("orders:view") && hasPermission("delivery:view")) {
+    return <Navigate to="/my-deliveries" replace />;
+  }
+  return <DashboardPage />;
+}
 
 export default function App() {
   return (
@@ -38,7 +54,51 @@ export default function App() {
         element={
           <ProtectedRoute>
             <AdminLayout>
-              <DashboardPage />
+              <HomeRoute />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/my-deliveries"
+        element={
+          <ProtectedRoute requiredPermission="delivery:view">
+            <AdminLayout>
+              <MyDeliveriesPage />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/delivery-board"
+        element={
+          <ProtectedRoute requiredPermission="orders:view">
+            <AdminLayout>
+              <DeliveryBoardPage />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/rider-cash"
+        element={
+          <ProtectedRoute requiredPermission="delivery:settle">
+            <AdminLayout>
+              <RiderCashPage />
+            </AdminLayout>
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/wallet"
+        element={
+          <ProtectedRoute requiredPermission="reports:view">
+            <AdminLayout>
+              <WalletPage />
             </AdminLayout>
           </ProtectedRoute>
         }

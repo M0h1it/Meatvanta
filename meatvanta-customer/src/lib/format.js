@@ -25,3 +25,9 @@ export function formatDate(value) {
 export function formatRupees(amount) {
   return `₹${Number(amount).toFixed(0)}`;
 }
+
+/** ISO datetime -> "24 Aug, 8:15 AM" (the viewer's own time zone) */
+export function formatDateTime(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+}

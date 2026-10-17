@@ -54,29 +54,31 @@ export default function Footer() {
         decoding="async"
         alt=""
         aria-hidden="true"
-        className="md:hidden absolute inset-x-0 top-0 w-full h-auto pointer-events-none select-none"
+        className="md:hidden absolute inset-x-0 top-0 w-full h-auto opacity-60 pointer-events-none select-none"
       />
 
-      <div className="relative page-x py-12">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+      {/* Phone first: tighter spacing so the footer is not most of a small screen (md: = original). */}
+      <div className="relative page-x py-8 md:py-12">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-6 md:gap-8 mb-6 md:mb-10">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2.5 mb-3">
-              <BrandLogo variant="mark" className="h-9" />
-              <span className="font-display text-xl font-bold text-white">{shopName}</span>
+            <div className="flex items-center gap-2.5 mb-2 md:mb-3">
+              <BrandLogo variant="mark" className="h-8 md:h-9" />
+              <span className="font-display text-lg md:text-xl font-bold text-white">{shopName}</span>
             </div>
             <p className="text-sm leading-relaxed">
               Fresh Meat <span className="text-accent">|</span> Daily Cut <span className="text-accent">|</span> No
               Frozen
             </p>
+            <div className="flex items-center justify-between gap-3 mt-2 md:block">
             {shopInfo?.yearsInBusiness > 0 && (
-              <p className="text-xs text-accent font-semibold mt-2 tracking-wide uppercase">
+              <p className="text-xs text-accent font-semibold tracking-wide uppercase md:mt-2">
                 {shopInfo.yearsInBusiness}+ Years of Trust
               </p>
             )}
 
             {/* Socials - links come from Shop Info; an empty one is not shown. */}
-            <div className="flex items-center gap-2 mt-4">
+            <div className="flex items-center gap-2 md:mt-4">
               {whatsappDigits && (
                 <a
                   href={`https://wa.me/${whatsappDigits}`}
@@ -101,11 +103,12 @@ export default function Footer() {
                 </a>
               ))}
             </div>
+            </div>
           </div>
 
           <div>
-            <p className="text-accent font-bold text-sm mb-3 tracking-wide uppercase">Quick Links</p>
-            <ul className="space-y-2 text-sm">
+            <p className="text-accent font-bold text-sm mb-2 md:mb-3 tracking-wide uppercase">Quick Links</p>
+            <ul className="space-y-1.5 md:space-y-2 text-sm">
               <li><Link to="/" className="hover:text-accent transition-colors">Home</Link></li>
               <li><Link to="/shop" className="hover:text-accent transition-colors">Shop</Link></li>
               <li><Link to="/about" className="hover:text-accent transition-colors">About Us</Link></li>
@@ -114,17 +117,17 @@ export default function Footer() {
           </div>
 
           <div>
-            <p className="text-accent font-bold text-sm mb-3 tracking-wide uppercase">Customer Care</p>
-            <ul className="space-y-2 text-sm">
+            <p className="text-accent font-bold text-sm mb-2 md:mb-3 tracking-wide uppercase">Customer Care</p>
+            <ul className="space-y-1.5 md:space-y-2 text-sm">
               <li><Link to="/faq" className="hover:text-accent transition-colors">FAQs</Link></li>
               <li><Link to="/delivery" className="hover:text-accent transition-colors">Delivery Info</Link></li>
               <li><Link to="/my-orders" className="hover:text-accent transition-colors">Track Order</Link></li>
             </ul>
           </div>
 
-          <div>
-            <p className="text-accent font-bold text-sm mb-3 tracking-wide uppercase">Get in Touch</p>
-            <ul className="space-y-2 text-sm">
+          <div className="col-span-2 md:col-span-1">
+            <p className="text-accent font-bold text-sm mb-2 md:mb-3 tracking-wide uppercase">Get in Touch</p>
+            <ul className="space-y-1.5 md:space-y-2 text-sm">
               {shopInfo?.phone && (
                 <li>
                   <a href={`tel:${shopInfo.phone}`} className="flex items-center gap-1.5 hover:text-accent transition-colors">
@@ -134,7 +137,7 @@ export default function Footer() {
                 </li>
               )}
               {whatsappDigits && (
-                <li>
+                <li className="hidden md:block">
                   <a
                     href={`https://wa.me/${whatsappDigits}`}
                     target="_blank"
@@ -153,13 +156,13 @@ export default function Footer() {
                 </li>
               )}
             </ul>
-            <p className="font-display italic text-accent text-lg mt-4 underline decoration-accent/40 underline-offset-4">
+            <p className="hidden md:block font-display italic text-accent text-lg mt-4 underline decoration-accent/40 underline-offset-4">
               Real Meat. Real Freshness.
             </p>
           </div>
         </div>
 
-        <div className="pt-6 border-t border-white/15 flex flex-wrap items-center justify-between gap-2">
+        <div className="pt-4 md:pt-6 border-t border-white/15 flex flex-wrap items-center justify-between gap-1 md:gap-2">
           <p className="text-xs text-white/60">
             © {new Date().getFullYear()} {shopName}. All rights reserved.
             {shopInfo?.fssaiNumber && ` · FSSAI Licence No. ${shopInfo.fssaiNumber}`}

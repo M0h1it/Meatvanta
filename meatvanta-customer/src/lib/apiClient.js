@@ -1,4 +1,5 @@
 import axios from "axios";
+import { noteServerTime } from "./serverClock";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000/api/public";
 
@@ -37,7 +38,11 @@ export function setSessionExpiredHandler(handler) {
 }
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Keep the shop server's clock in sync (used to end offers at the exact second).
+    noteServerTime(response.data?.serverTime);
+    return response;
+  },
   async (error) => {
     const original = error.config;
     const status = error.response?.status;

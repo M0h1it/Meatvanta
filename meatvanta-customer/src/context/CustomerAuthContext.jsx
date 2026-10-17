@@ -1,6 +1,7 @@
 import { createContext, useEffect, useState, useCallback } from "react";
 import {
   verifyOtp as verifyOtpApi,
+  devLogin as devLoginApi,
   fetchCurrentCustomer,
   logoutRequest,
 } from "../features/auth/api/authApi";
@@ -54,9 +55,9 @@ export function CustomerAuthProvider({ children }) {
     setAfterLoginAction(null);
   }, []);
 
-  const verifyOtp = useCallback(
-    async ({ accessToken, signupToken, name }) => {
-      const result = await verifyOtpApi({ accessToken, signupToken, name });
+  // Shared by the real OTP login and the local-only dev login below.
+  const finishLogin = useCallback(
+    async (result) => {
       const withAddr = await withAddresses(result.customer);
       setCustomer(withAddr);
       setIsLoginOpen(false);
@@ -70,6 +71,18 @@ export function CustomerAuthProvider({ children }) {
       return { ...result, customer: withAddr };
     },
     [afterLoginAction]
+  );
+
+  const verifyOtp = useCallback(
+    async ({ accessToken, signupToken, name }) =>
+      finishLogin(await verifyOtpApi({ accessToken, signupToken, name })),
+    [finishLogin]
+  );
+
+  /** LOCAL ONLY - skips MSG91 for whitelisted numbers (see LoginSheet). */
+  const devLogin = useCallback(
+    async ({ phone, name }) => finishLogin(await devLoginApi({ phone, name })),
+    [finishLogin]
   );
 
   const logout = useCallback(async () => {
@@ -102,6 +115,7 @@ export function CustomerAuthProvider({ children }) {
     openLogin,
     closeLogin,
     verifyOtp,
+    devLogin,
     logout,
     refreshCustomer,
   };

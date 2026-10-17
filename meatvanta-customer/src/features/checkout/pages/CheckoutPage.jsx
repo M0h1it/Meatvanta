@@ -9,6 +9,7 @@ import { HERO_IMAGE } from "../../../lib/images";
 import CouponBox from "../../coupons/components/CouponBox";
 import { useCouponPreview } from "../../coupons/useCouponPreview";
 import { loadRazorpay } from "../../../lib/externalScripts";
+import { fetchWallet } from "../../wallet/api/walletApi";
 
 /**
  * First-order welcome offer, shown on a payment option: the live saving when
@@ -55,6 +56,10 @@ export default function CheckoutPage() {
   const [errors, setErrors] = useState({});
   const [generalError, setGeneralError] = useState(null);
 
+  // Wallet: balance of the signed-in customer, and whether they chose to spend it.
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWallet, setUseWallet] = useState(true);
+
   const [form, setForm] = useState({
     customerName: "",
     customerPhone: "",
@@ -79,6 +84,17 @@ export default function CheckoutPage() {
   useEffect(() => {
     loadRazorpay().catch(() => {}); // a failure is handled again on payment
   }, []);
+
+  // Wallet balance - only for a signed-in customer. A failure just means "no wallet shown".
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setWalletBalance(0);
+      return;
+    }
+    fetchWallet()
+      .then((w) => setWalletBalance(Number(w.balance) || 0))
+      .catch(() => setWalletBalance(0));
+  }, [isAuthenticated]);
 
   useEffect(() => {
     fetchDeliveryAvailability()
@@ -137,6 +153,16 @@ export default function CheckoutPage() {
   // Display only - the server prices the order itself and the payment amount comes from it.
   const grandTotal = totalPrice + deliveryCharge - discount;
   const noDatesAvailable = availability && availability.dates.length === 0;
+
+  // How much of the bill the wallet pays (same rules as the server: whole balance up to the bill,
+  // and Razorpay needs at least Rs.1 left to charge).
+  let walletApplied = isAuthenticated && useWallet ? Math.min(walletBalance, Math.max(0, grandTotal)) : 0;
+  if (walletApplied > 0 && walletApplied < grandTotal && form.paymentMethod === "razorpay" && grandTotal - walletApplied < 1) {
+    walletApplied = Math.max(0, grandTotal - 1);
+  }
+  walletApplied = Math.round(walletApplied * 100) / 100;
+  const payable = Math.max(0, Math.round((grandTotal - walletApplied) * 100) / 100);
+  const paidByWalletOnly = walletApplied > 0 && walletApplied >= grandTotal;
 
   function setField(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -222,6 +248,16 @@ export default function CheckoutPage() {
     rzp.open();
   }
 
+  // The map pin of the chosen saved address - sent only while the written address
+  // is still the saved one (if the customer retyped it, the old pin may be wrong).
+  function selectedPin() {
+    const a = customer?.addresses?.find((x) => x.id === selectedAddressId);
+    if (!a || a.latitude == null || a.longitude == null) return {};
+    const savedText = [a.addressLine, a.area, a.pincode].filter(Boolean).join(", ");
+    if (savedText !== form.deliveryAddress) return {};
+    return { deliveryLatitude: Number(a.latitude), deliveryLongitude: Number(a.longitude) };
+  }
+
   async function submitOrder() {
     setGeneralError(null);
     setErrors({});
@@ -232,8 +268,11 @@ export default function CheckoutPage() {
         customerName: form.customerName,
         customerPhone: form.customerPhone,
         deliveryAddress: form.deliveryAddress,
+        ...selectedPin(),
         deliveryDate: form.deliveryDate,
         paymentMethod: form.paymentMethod,
+        // The server works out how much the wallet really pays; this only says "use it".
+        useWallet: walletApplied > 0 ? true : undefined,
         notes: form.notes || undefined,
         couponCode: coupon.couponCode || undefined,
         items: items.map((i) => ({
@@ -448,25 +487,80 @@ export default function CheckoutPage() {
           </div>
         </section>
 
-        {/* Payment */}
+        {/* Payment: the wallet sits in the same list as cash and online. When it pays the whole
+            bill the other two are greyed out (there is nothing left to pay); when it only covers
+            part, they stay available for the rest. */}
         <section className="bg-white rounded border border-hairline p-5">
           <div className="flex items-center gap-2 mb-1">
             <span className="material-symbols-outlined text-brand">lock</span>
             <h2 className="font-bold text-ink">Payment Method</h2>
           </div>
-          <p className="text-xs text-ink/50 mb-3">Select your preferred payment option</p>
+          <p className="text-xs text-ink/50 mb-3">
+            {paidByWalletOnly
+              ? "Your wallet pays the full amount - nothing more to pay."
+              : walletApplied > 0
+                ? `Wallet pays ${formatRupees(walletApplied)}. Choose how to pay the remaining ${formatRupees(payable)}.`
+                : "Select your preferred payment option"}
+          </p>
 
           <div className="space-y-2">
-            {availability?.payment.codEnabled && (
+            {/* Wallet: a signed-in customer with a balance */}
+            {isAuthenticated && walletBalance > 0 && (
               <label
                 className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition-colors ${
-                  form.paymentMethod === "cod" ? "border-brand-dark bg-brand-dark/5" : "border-ink/15"
+                  useWallet ? "border-brand-dark bg-brand-dark/5" : "border-ink/15"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={useWallet}
+                  onChange={(e) => setUseWallet(e.target.checked)}
+                  className="mt-1"
+                />
+                <span className="flex items-center gap-2 flex-1">
+                  <span className="material-symbols-outlined text-accent">account_balance_wallet</span>
+                  <span>
+                    <span className="font-semibold text-ink text-sm block">Meat Vanta Wallet</span>
+                    <span className="text-xs text-ink/60">
+                      Balance {formatRupees(walletBalance)}
+                      {useWallet && walletApplied > 0 && <> · {formatRupees(walletApplied)} used for this order</>}
+                    </span>
+                  </span>
+                </span>
+                <span className="text-[10px] font-bold uppercase text-success bg-success/10 px-2 py-0.5 rounded-full self-center shrink-0">
+                  Available
+                </span>
+              </label>
+            )}
+
+            {/* A guest is invited to sign in to use the wallet */}
+            {!isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => openLogin()}
+                className="w-full flex items-center gap-3 p-3 rounded-sm border border-dashed border-ink/25 text-left hover:border-brand-dark transition-colors"
+              >
+                <span className="material-symbols-outlined text-accent">account_balance_wallet</span>
+                <span className="flex-1">
+                  <span className="font-semibold text-ink text-sm block">Meat Vanta Wallet</span>
+                  <span className="text-xs text-ink/60">Have wallet balance? Sign in to use wallet</span>
+                </span>
+              </button>
+            )}
+
+            {availability?.payment.codEnabled && (
+              <label
+                className={`flex items-start gap-3 p-3 rounded-sm border transition-colors ${
+                  paidByWalletOnly
+                    ? "border-ink/10 bg-ink/5 opacity-50 cursor-not-allowed"
+                    : `cursor-pointer ${form.paymentMethod === "cod" ? "border-brand-dark bg-brand-dark/5" : "border-ink/15"}`
                 }`}
               >
                 <input
                   type="radio"
                   name="paymentMethod"
-                  checked={form.paymentMethod === "cod"}
+                  checked={!paidByWalletOnly && form.paymentMethod === "cod"}
+                  disabled={paidByWalletOnly}
                   onChange={() => setField("paymentMethod", "cod")}
                   className="mt-1"
                 />
@@ -475,12 +569,14 @@ export default function CheckoutPage() {
                   <span>
                     <span className="font-semibold text-ink text-sm block">Cash on Delivery</span>
                     <span className="text-xs text-ink/60">Pay when your order arrives.</span>
-                    <WelcomeNote welcome={welcome} method="cod" />
+                    {!paidByWalletOnly && <WelcomeNote welcome={welcome} method="cod" />}
                   </span>
                 </span>
-                <span className="text-[10px] font-bold uppercase text-success bg-success/10 px-2 py-0.5 rounded-full self-center shrink-0">
-                  Available
-                </span>
+                {!paidByWalletOnly && (
+                  <span className="text-[10px] font-bold uppercase text-success bg-success/10 px-2 py-0.5 rounded-full self-center shrink-0">
+                    Available
+                  </span>
+                )}
               </label>
             )}
 
@@ -489,14 +585,17 @@ export default function CheckoutPage() {
                 netbanking together, rather than a separate option per method. */}
             {availability?.payment.upiEnabled && (
               <label
-                className={`flex items-start gap-3 p-3 rounded-sm border cursor-pointer transition-colors ${
-                  form.paymentMethod === "razorpay" ? "border-brand-dark bg-brand-dark/5" : "border-ink/15"
+                className={`flex items-start gap-3 p-3 rounded-sm border transition-colors ${
+                  paidByWalletOnly
+                    ? "border-ink/10 bg-ink/5 opacity-50 cursor-not-allowed"
+                    : `cursor-pointer ${form.paymentMethod === "razorpay" ? "border-brand-dark bg-brand-dark/5" : "border-ink/15"}`
                 }`}
               >
                 <input
                   type="radio"
                   name="paymentMethod"
-                  checked={form.paymentMethod === "razorpay"}
+                  checked={!paidByWalletOnly && form.paymentMethod === "razorpay"}
+                  disabled={paidByWalletOnly}
                   onChange={() => setField("paymentMethod", "razorpay")}
                   className="mt-1"
                 />
@@ -505,16 +604,27 @@ export default function CheckoutPage() {
                   <span>
                     <span className="font-semibold text-ink text-sm block">Pay Online</span>
                     <span className="text-xs text-ink/60">Card, UPI or Net Banking - pay securely now via Razorpay.</span>
-                    <WelcomeNote welcome={welcome} method="razorpay" />
+                    {!paidByWalletOnly && <WelcomeNote welcome={welcome} method="razorpay" />}
                   </span>
                 </span>
-                <span className="text-[10px] font-bold uppercase text-success bg-success/10 px-2 py-0.5 rounded-full self-center shrink-0">
-                  Available
-                </span>
+                {!paidByWalletOnly && (
+                  <span className="text-[10px] font-bold uppercase text-success bg-success/10 px-2 py-0.5 rounded-full self-center shrink-0">
+                    Available
+                  </span>
+                )}
               </label>
             )}
-
           </div>
+
+          {paidByWalletOnly && (
+            <div className="mt-3 flex items-start gap-2 bg-success/10 border border-success/20 rounded-sm p-3">
+              <span className="material-symbols-outlined text-success">check_circle</span>
+              <p className="text-sm text-ink">
+                Your wallet pays the full <span className="font-bold">{formatRupees(grandTotal)}</span>. Untick the wallet
+                to pay another way.
+              </p>
+            </div>
+          )}
 
           <div className="mt-4 flex items-start gap-2 bg-brand/5 border border-brand/15 rounded-sm p-3">
             <span className="material-symbols-outlined text-brand text-lg">shield</span>
@@ -599,13 +709,32 @@ export default function CheckoutPage() {
             <span className="text-2xl font-bold text-ink">{formatRupees(grandTotal)}</span>
           </div>
 
+          {walletApplied > 0 && (
+            <div className="mt-2 space-y-1.5">
+              <div className="flex justify-between text-sm text-success">
+                <span>Paid from wallet</span>
+                <span className="font-semibold">−{formatRupees(walletApplied)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-ink">
+                  {paidByWalletOnly ? "Left to pay" : form.paymentMethod === "cod" ? "To pay on delivery" : "To pay now"}
+                </span>
+                <span className="text-xl font-bold text-ink">{formatRupees(payable)}</span>
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={isSubmitting || noDatesAvailable || !form.paymentMethod}
             className="flex items-center justify-center gap-2 w-full mt-4 bg-brand text-white font-bold py-4 rounded-full hover:opacity-90 transition-opacity disabled:opacity-40"
           >
             <span className="material-symbols-outlined text-lg">lock</span>
-            {isSubmitting ? "Placing your order..." : `Place Order · ${formatRupees(grandTotal)}`}
+            {isSubmitting
+              ? "Placing your order..."
+              : paidByWalletOnly
+                ? `Place Order · Paid by wallet`
+                : `Place Order · ${formatRupees(payable)}`}
           </button>
         </section>
       </form>

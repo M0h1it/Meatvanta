@@ -52,7 +52,9 @@ model AdminUser {
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
   auditLogs    AuditLog[]
-  createdOrders Order[]
+  createdOrders Order[] @relation("OrderCreatedBy")
+  // Orders this admin (a delivery rider) is assigned to deliver.
+  deliveries    Order[] @relation("OrderDelivery")
   passwordResets AdminPasswordReset[]
 
   @@index([roleId])
@@ -231,6 +233,10 @@ model Order {
   customerName      String      @map("customer_name") @db.VarChar(150)
   customerPhone     String      @map("customer_phone") @db.VarChar(20)
   deliveryAddress   String?     @map("delivery_address") @db.Text
+  // Exact map pin the customer dropped on their address (snapshot, like the text above).
+  // Null for phone orders and for addresses saved without a pin - maps then fall back to the text.
+  deliveryLatitude  Decimal?    @map("delivery_latitude") @db.Decimal(10, 7)
+  deliveryLongitude Decimal?    @map("delivery_longitude") @db.Decimal(10, 7)
 
   // placed -> preparing -> out_for_delivery -> delivered, or cancelled from placed/preparing
   status            String      @default("placed") @db.VarChar(30)
@@ -274,6 +280,36 @@ model Order {
   // a full staff table would be over-engineering for that.
   deliveryPersonName String?    @map("delivery_person_name") @db.VarChar(100)
 
+  // The rider who delivers this order = an admin user whose role has the
+  // delivery permissions. deliveryPersonName / deliveryPersonPhone are snapshots
+  // of that rider's name and phone (what the customer sees), so renaming or
+  // removing the rider later never rewrites old orders.
+  deliveryAdminId    Int?       @map("delivery_admin_id")
+  deliveryAdmin      AdminUser? @relation("OrderDelivery", fields: [deliveryAdminId], references: [id], onDelete: SetNull)
+  deliveryPersonPhone String?   @map("delivery_person_phone") @db.VarChar(20)
+  deliveryAssignedAt DateTime?  @map("delivery_assigned_at")
+  pickedUpAt         DateTime?  @map("picked_up_at")
+  // Set when the rider reports "could not deliver"; the owner decides what next.
+  deliveryFailedReason String?  @map("delivery_failed_reason") @db.VarChar(255)
+  deliveryFailedAt   DateTime?  @map("delivery_failed_at")
+  // How many times a rider reported "could not deliver" for this order.
+  deliveryAttempts   Int        @default(0) @map("delivery_attempts")
+
+  // Cash-on-delivery money: the rider collects it at the door, the shop marks it
+  // received when the rider hands it over. Null while the cash is still with the rider.
+  cashSettledAt      DateTime?  @map("cash_settled_at")
+  cashSettledByName  String?    @map("cash_settled_by_name") @db.VarChar(100)
+
+  // Wallet + items that could not be sent. `subtotal`, `discount` and `deliveryCharge` stay as
+  // they were at checkout; `total` is always what the customer really pays now:
+  //   total = max(0, subtotal - unavailableAmount + deliveryCharge - discount)
+  // walletUsed        = part of the bill paid from the customer's wallet (checkout, later phase)
+  // unavailableAmount = value of items the shop could not send (item prices, before any discount)
+  // walletCredited    = money given back to the customer's wallet for this order so far
+  walletUsed         Decimal    @default(0) @map("wallet_used") @db.Decimal(10, 2)
+  unavailableAmount  Decimal    @default(0) @map("unavailable_amount") @db.Decimal(10, 2)
+  walletCredited     Decimal    @default(0) @map("wallet_credited") @db.Decimal(10, 2)
+
   subtotal          Decimal     @db.Decimal(10, 2)
   deliveryCharge    Decimal     @default(0) @map("delivery_charge") @db.Decimal(10, 2)
   discount          Decimal     @default(0) @db.Decimal(10, 2)
@@ -284,7 +320,7 @@ model Order {
   // Which staff member recorded a manually-taken order - null once real
   // customer-site checkout exists and an order isn't staff-entered.
   createdByAdminId  Int?        @map("created_by_admin_id")
-  createdByAdmin    AdminUser?  @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdByAdmin    AdminUser?  @relation("OrderCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
 
   // Coupon used on this order (customer site). couponCode is a snapshot so the
   // order still shows the code even if the coupon is edited or deleted later.
@@ -311,6 +347,8 @@ model Order {
   @@index([deliveredAt])
   @@index([customerId])
   @@index([couponId])
+  @@index([deliveryAdminId])
+  @@index([cashSettledAt])
   @@map("orders")
 }
 
@@ -327,6 +365,10 @@ model OrderItem {
   variantLabel      String          @map("variant_label") @db.VarChar(50)
 
   unitPrice         Decimal         @map("unit_price") @db.Decimal(10, 2)
+  // What the customer asked for. `quantity` below is what will actually be sent: it goes down when
+  // the shop marks part of the line unavailable (lineTotal follows quantity). Null on rows from
+  // before this column existed - read it as `orderedQuantity ?? quantity`.
+  orderedQuantity   Int?            @map("ordered_quantity")
   // Snapshot of chosen options: [{ groupName, optionName, extraPrice }].
   // Stored rather than joined so editing an option later never rewrites history.
   selectedOptions   Json?           @map("selected_options")
@@ -355,9 +397,18 @@ model PendingCheckout {
   razorpayOrderId String   @unique @map("razorpay_order_id") @db.VarChar(100)
   customerId      Int?     @map("customer_id")
   payload         Json
+  // What the customer pays through Razorpay (the bill minus the wallet part).
   amount          Decimal  @db.Decimal(10, 2)
   createdAt       DateTime @default(now()) @map("created_at")
 
+  // Wallet money reserved for this checkout while the Razorpay window is open.
+  // walletState: held -> captured (payment verified, becomes the order's walletUsed)
+  //                    -> released (customer never paid; given back after ~20 minutes)
+  walletPhone     String?  @map("wallet_phone") @db.VarChar(10)
+  walletHold      Decimal  @default(0) @map("wallet_hold") @db.Decimal(10, 2)
+  walletState     String?  @map("wallet_state") @db.VarChar(10)
+
+  @@index([walletState, createdAt])
   @@map("pending_checkouts")
 }
 // Singleton - exactly one row (id = 1), created on first read if missing.
@@ -416,10 +467,15 @@ model Notification {
   entityType String?   @map("entity_type") @db.VarChar(50)
   entityId   Int?      @map("entity_id")
 
+  // null = shop-wide alert (owner/staff side). Set = meant for that one admin only
+  // (e.g. "order assigned to you" for a delivery rider).
+  adminUserId Int?     @map("admin_user_id")
+
   isRead     Boolean   @default(false) @map("is_read")
   readAt     DateTime? @map("read_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
+  @@index([adminUserId])
   @@index([isRead])
   @@index([createdAt])
   @@map("notifications")
@@ -792,4 +848,43 @@ model RecipeStep {
 
   @@index([recipeId])
   @@map("recipe_steps")
+}
+
+// Store credit, keyed by the customer's phone number (last 10 digits) - so a guest who is
+// credited can see it after signing in with the same number. Credits only come from money the
+// customer already paid (unavailable items, cancelled orders); there is no top-up and no payout.
+// `balance` is what can be spent now; `held` is reserved by a checkout that is still being paid
+// (a later phase). Every change also writes a WalletTransaction row, so the balance can always be
+// explained from the ledger.
+model WalletAccount {
+  id        Int      @id @default(autoincrement())
+  phone     String   @unique @db.VarChar(10)
+  balance   Decimal  @default(0) @db.Decimal(10, 2)
+  held      Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  transactions WalletTransaction[]
+
+  @@map("wallet_accounts")
+}
+
+model WalletTransaction {
+  id               Int           @id @default(autoincrement())
+  accountId        Int           @map("account_id")
+  account          WalletAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  // credit | debit | hold | release   (this phase only writes "credit")
+  type             String        @db.VarChar(20)
+  amount           Decimal       @db.Decimal(10, 2)
+  // Spendable balance right after this row - makes the history readable without re-adding it up.
+  balanceAfter     Decimal       @map("balance_after") @db.Decimal(10, 2)
+  orderId          Int?          @map("order_id")
+  orderNumber      String?       @map("order_number") @db.VarChar(20)
+  reason           String        @db.VarChar(255)
+  createdByAdminId Int?          @map("created_by_admin_id")
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  @@index([accountId])
+  @@index([orderId])
+  @@map("wallet_transactions")
 }

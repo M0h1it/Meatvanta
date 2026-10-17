@@ -216,7 +216,15 @@ export default function OrderConfirmationPage() {
           <span className="font-bold text-ink">
             Total
             <span className="block text-xs font-normal text-ink/50">
-              {order.paymentMethod === "cod" ? "Pay on delivery" : "Paid online"}
+              {order.paymentMethod === "wallet"
+                ? "Paid from your wallet"
+                : order.paymentMethod === "cod"
+                  ? Number(order.walletUsed) > 0
+                    ? `Wallet ${formatRupees(order.walletUsed)} · pay ${formatRupees(Math.max(0, Number(order.total) - Number(order.walletUsed)))} on delivery`
+                    : "Pay on delivery"
+                  : Number(order.walletUsed) > 0
+                    ? `Paid online + wallet ${formatRupees(order.walletUsed)}`
+                    : "Paid online"}
             </span>
           </span>
           <span className="text-2xl font-bold text-ink">{formatRupees(order.total)}</span>

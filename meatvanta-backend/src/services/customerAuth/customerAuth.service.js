@@ -69,6 +69,55 @@ async function verifyOtp({ accessToken, signupToken, name }) {
   return { customer: publicCustomer(customer), tokens, isNewCustomer };
 }
 
+/**
+ * LOCAL DEVELOPMENT ONLY - signs in a whitelisted phone number without MSG91.
+ * It exists because the OTP SMS is not deliverable from a developer's machine.
+ *
+ * Every one of these must hold, otherwise it behaves as if the route did not exist:
+ *  - NODE_ENV is not "production"
+ *  - ALLOW_DEV_LOGIN=true (never put this in the VPS .env)
+ *  - the number is listed in DEV_LOGIN_PHONES (comma separated, 10 digits)
+ *  - the request really came from this same machine (checked in the controller)
+ */
+function isDevLoginEnabled() {
+  return process.env.NODE_ENV !== "production" && process.env.ALLOW_DEV_LOGIN === "true";
+}
+
+function devLoginPhones() {
+  return (process.env.DEV_LOGIN_PHONES || "")
+    .split(",")
+    .map((p) => p.replace(/\D/g, "").slice(-10))
+    .filter((p) => p.length === 10);
+}
+
+async function devLogin({ phone, name }) {
+  const cleaned = String(phone || "").replace(/\D/g, "").slice(-10);
+  if (!isDevLoginEnabled() || !devLoginPhones().includes(cleaned)) {
+    throw badRequestError("Route not found.", 404);
+  }
+
+  let customer = await prisma.customer.findUnique({ where: { phone: cleaned } });
+  const isNewCustomer = !customer;
+
+  if (!customer) {
+    customer = await prisma.customer.create({
+      data: {
+        name: (name && name.trim().length >= 2 ? name.trim() : process.env.DEV_LOGIN_NAME) || "Dev User",
+        phone: cleaned,
+        lastLoginAt: new Date(),
+      },
+    });
+  } else {
+    if (!customer.isActive) {
+      throw badRequestError("This account is not active. Please contact the shop.", 403);
+    }
+    await prisma.customer.update({ where: { id: customer.id }, data: { lastLoginAt: new Date() } });
+  }
+
+  const tokens = await issueSession(customer.id);
+  return { customer: publicCustomer(customer), tokens, isNewCustomer };
+}
+
 async function issueSession(customerId) {
   const accessToken = signCustomerAccessToken({ id: customerId });
 
@@ -142,6 +191,8 @@ function publicCustomer(customer) {
 
 module.exports = {
   verifyOtp,
+  devLogin,
+  isDevLoginEnabled,
   refreshSession,
   logout,
   getCustomerById,

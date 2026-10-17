@@ -129,10 +129,17 @@ async function updateLayout(req, res, next) {
 /** Public - live banners for the customer site, grouped by placement, plus each spot's shape. */
 async function listLive(req, res, next) {
   try {
-    const [banners, layouts] = await Promise.all([bannersService.listLiveBanners(), bannersService.getLayouts()]);
-    // Short cache: a banner switched off in the admin disappears within a minute.
-    res.set("Cache-Control", "public, max-age=60");
-    return success(res, 200, "Banners fetched.", { banners, layouts });
+    // One "now" for both questions, so the list and the next change agree.
+    const now = new Date();
+    const [banners, layouts, nextChangeAt] = await Promise.all([
+      bannersService.listLiveBanners(now),
+      bannersService.getLayouts(),
+      bannersService.nextBannerChangeAt(now),
+    ]);
+    // Always revalidate (cheap: the browser sends the ETag and gets a 304). A cached copy would
+    // show a banner past its end time, or miss one that just started.
+    res.set("Cache-Control", "no-cache");
+    return success(res, 200, "Banners fetched.", { banners, layouts, nextChangeAt });
   } catch (err) {
     return next(err);
   }

@@ -83,3 +83,31 @@ export function loadRazorpay() {
     waitFor(() => Boolean(window.Razorpay), 5000)
   );
 }
+
+let leafletPromise = null;
+
+/**
+ * Leaflet (free OpenStreetMap maps, no API key) - loaded only when someone
+ * opens the address form, so it adds nothing to the rest of the site.
+ */
+export function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (leafletPromise) return leafletPromise;
+  if (!document.querySelector('link[data-leaflet]')) {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    css.setAttribute("data-leaflet", "1");
+    document.head.appendChild(css);
+  }
+  leafletPromise = loadScript([
+    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+    "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js",
+  ])
+    .then(() => waitFor(() => Boolean(window.L), 5000))
+    .catch((err) => {
+      leafletPromise = null; // allow a retry
+      throw err;
+    });
+  return leafletPromise;
+}

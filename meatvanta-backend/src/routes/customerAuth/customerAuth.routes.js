@@ -4,6 +4,7 @@ const router = express.Router();
 
 const controller = require("../../controllers/customerAuth/customerAuth.controller");
 const addressController = require("../../controllers/customerAddresses/customerAddresses.controller");
+const walletController = require("../../controllers/wallet/wallet.controller");
 const {
   requireCustomerAuth,
   CUSTOMER_ACCESS_COOKIE,
@@ -38,6 +39,8 @@ const otpVerifyLimiter = rateLimit({
 });
 
 router.post("/verify-otp", otpVerifyLimiter, controller.verifyOtp);
+// Local-only OTP bypass for whitelisted numbers - 404s everywhere else (see controller).
+router.post("/dev-login", otpVerifyLimiter, controller.devLogin);
 router.post("/refresh", controller.refresh);
 router.post("/logout", controller.logout);
 router.get("/me", guestIfNoSession, requireCustomerAuth, controller.me);
@@ -48,5 +51,8 @@ router.post("/addresses", requireCustomerAuth, addressController.create);
 router.put("/addresses/:id", requireCustomerAuth, addressController.update);
 router.delete("/addresses/:id", requireCustomerAuth, addressController.remove);
 router.patch("/addresses/:id/default", requireCustomerAuth, addressController.setDefault);
+
+// Wallet balance + history of the signed-in customer (tied to their phone number).
+router.get("/wallet", requireCustomerAuth, walletController.mine);
 
 module.exports = router;

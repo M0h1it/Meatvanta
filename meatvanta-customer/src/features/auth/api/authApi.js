@@ -12,6 +12,12 @@ export async function verifyOtp({ accessToken, signupToken, name }) {
   return data.data; // { customer, isNewCustomer }
 }
 
+/** LOCAL ONLY: sign in a whitelisted number without MSG91 (backend 404s in production). */
+export async function devLogin({ phone, name }) {
+  const { data } = await apiClient.post("/auth/dev-login", { phone, name });
+  return data.data; // { customer, isNewCustomer }
+}
+
 export async function fetchCurrentCustomer() {
   const { data } = await apiClient.get("/auth/me");
   return data.data.customer;

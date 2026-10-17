@@ -13,7 +13,7 @@ const FEATURES = [
 ];
 
 export default function LoginSheet() {
-  const { isLoginOpen, closeLogin, verifyOtp } = useCustomerAuth();
+  const { isLoginOpen, closeLogin, verifyOtp, devLogin } = useCustomerAuth();
 
   const [step, setStep] = useState(STEPS.PHONE);
   const [phone, setPhone] = useState("");
@@ -97,6 +97,23 @@ export default function LoginSheet() {
     e?.preventDefault();
     setError(null);
     setIsSubmitting(true);
+
+    // LOCAL ONLY: `import.meta.env.DEV` is false in a production build, so this
+    // whole branch is dropped from what customers download. The number must be
+    // in VITE_DEV_LOGIN_PHONES (set in .env.local only) and the backend must
+    // also have ALLOW_DEV_LOGIN=true - otherwise it answers 404.
+    const devPhones = (import.meta.env.VITE_DEV_LOGIN_PHONES || "").split(",").map((p) => p.trim());
+    if (import.meta.env.DEV && devPhones.includes(phone)) {
+      try {
+        await devLogin({ phone });
+        // Sheet closes itself on success via context.
+      } catch (err) {
+        setError(err.response?.data?.message || "Dev login failed - is ALLOW_DEV_LOGIN set in the backend .env?");
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
 
     if (typeof window.sendOtp !== "function") {
       try {

@@ -1,6 +1,7 @@
 import { TAG_CLASS } from "./tagStyles";
 import DealCountdown from "./DealCountdown";
 import { cardPricing, comboSavings } from "../../lib/offers";
+import { useLiveItems } from "../../hooks/useLiveItems";
 
 /**
  * Labels on a product: "% OFF" (from MRP), the automatic "Bestseller", and the
@@ -9,7 +10,8 @@ import { cardPricing, comboSavings } from "../../lib/offers";
  */
 export default function ProductBadges({ product, max = 2, size = "sm", withCountdown = false, className = "" }) {
   const pricing = cardPricing(product);
-  const tags = product?.tags || [];
+  // A deal tag leaves the card at the exact moment it ends - not only when the page is reloaded.
+  const tags = useLiveItems(product?.tags);
   const items = [];
   if (product?.combo) items.push({ key: "combo", label: "Combo", cls: TAG_CLASS.dark });
   if (pricing?.discountLabel) items.push({ key: "discount", label: pricing.discountLabel, cls: TAG_CLASS.green, big: true });

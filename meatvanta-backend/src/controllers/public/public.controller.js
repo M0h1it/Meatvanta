@@ -70,7 +70,7 @@ async function createOrder(req, res, next) {
 
     // req.customer is set by attachCustomerIfPresent when signed in, absent for guests.
     const { order, razorpayOrderId, razorpayKeyId, amount } =
-      await ordersService.createPublicOrder(req.body, req.customer?.id ?? null);
+      await ordersService.createPublicOrder(req.body, req.customer?.id ?? null, req.customer?.phone ?? null);
 
     // For "cod", `order` is the real, already-created Order. For "razorpay",
     // nothing has been created yet - only a Razorpay order + a priced draft
@@ -89,11 +89,13 @@ async function createOrder(req, res, next) {
             deliveryChargeStatus: order.deliveryChargeStatus,
             // Lets the customer see who is bringing the order once it is out for delivery.
             deliveryPersonName: order.deliveryPersonName,
+        deliveryPersonPhone: order.deliveryPersonPhone,
             subtotal: order.subtotal,
             deliveryCharge: order.deliveryCharge,
             discount: order.discount,
             couponCode: order.couponCode,
             freeDelivery: order.freeDelivery,
+            walletUsed: order.walletUsed,
             total: order.total,
             status: order.status,
             items: order.items,
@@ -128,11 +130,15 @@ async function verifyRazorpayPayment(req, res, next) {
         paymentStatus: order.paymentStatus,
         deliveryChargeStatus: order.deliveryChargeStatus,
         deliveryPersonName: order.deliveryPersonName,
+        deliveryPersonPhone: order.deliveryPersonPhone,
+        deliveredAt: order.deliveredAt,
+        paymentVerifiedAt: order.paymentVerifiedAt,
         subtotal: order.subtotal,
         deliveryCharge: order.deliveryCharge,
         discount: order.discount,
         couponCode: order.couponCode,
         freeDelivery: order.freeDelivery,
+        walletUsed: order.walletUsed,
         total: order.total,
         status: order.status,
         items: order.items,
@@ -202,11 +208,14 @@ async function trackOrder(req, res, next) {
         deliveryChargeStatus: order.deliveryChargeStatus,
         // Lets the customer see who is bringing the order once it is out for delivery.
         deliveryPersonName: order.deliveryPersonName,
+        deliveryPersonPhone: order.deliveryPersonPhone,
         subtotal: order.subtotal,
         deliveryCharge: order.deliveryCharge,
         discount: order.discount,
         couponCode: order.couponCode,
         freeDelivery: order.freeDelivery,
+        unavailableAmount: order.unavailableAmount,
+        walletCredited: order.walletCredited,
         total: order.total,
         createdAt: order.createdAt,
         items: order.items,
@@ -233,11 +242,19 @@ function toCustomerOrderView(order) {
     deliveryChargeStatus: order.deliveryChargeStatus,
     // Lets the customer see who is bringing the order once it is out for delivery.
     deliveryPersonName: order.deliveryPersonName,
+    deliveryPersonPhone: order.deliveryPersonPhone,
+    deliveredAt: order.deliveredAt,
+    paymentVerifiedAt: order.paymentVerifiedAt,
     subtotal: order.subtotal,
     deliveryCharge: order.deliveryCharge,
     discount: order.discount,
     couponCode: order.couponCode,
     freeDelivery: order.freeDelivery,
+    // Items the shop could not send, and what went back to the customer's wallet for them.
+    // `total` is already the reduced bill; item rows carry orderedQuantity vs quantity.
+    unavailableAmount: order.unavailableAmount,
+    walletUsed: order.walletUsed,
+    walletCredited: order.walletCredited,
     total: order.total,
     createdAt: order.createdAt,
     items: order.items,

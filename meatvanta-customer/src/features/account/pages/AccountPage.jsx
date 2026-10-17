@@ -4,6 +4,8 @@ import { fetchAddresses, deleteAddress, setDefaultAddress } from "../api/address
 import { useCustomerAuth } from "../../../hooks/useCustomerAuth";
 import AddressFormModal from "../components/AddressFormModal";
 import AccountSidebar from "../components/AccountSidebar";
+import { fetchWallet } from "../../wallet/api/walletApi";
+import { formatRupees, formatDateTime } from "../../../lib/format";
 
 export default function AccountPage() {
   const { customer, isAuthenticated, isLoading: authLoading, openLogin, logout, refreshCustomer } =
@@ -14,6 +16,7 @@ export default function AccountPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [editingAddress, setEditingAddress] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [wallet, setWallet] = useState(null);
 
   async function loadAddresses() {
     setIsLoading(true);
@@ -32,6 +35,8 @@ export default function AccountPage() {
       return;
     }
     loadAddresses();
+    // The wallet is a nice-to-have on this page: a failure must not break addresses.
+    fetchWallet().then(setWallet).catch(() => setWallet(null));
   }, [isAuthenticated]);
 
   async function handleDelete(address) {
@@ -91,6 +96,40 @@ export default function AccountPage() {
               </div>
             </div>
           </div>
+
+          {wallet && (
+            <div className="bg-white rounded border border-hairline p-5 mb-5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-full bg-accent/15 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-accent">account_balance_wallet</span>
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="font-bold text-ink">Meat Vanta Wallet</h2>
+                    <p className="text-xs text-ink/60">Use it at checkout, up to the full amount of your order.</p>
+                  </div>
+                </div>
+                <p className="text-2xl font-bold text-ink shrink-0">{formatRupees(wallet.balance)}</p>
+              </div>
+
+              {wallet.transactions.length > 0 && (
+                <ul className="mt-4 border-t border-hairline divide-y divide-hairline">
+                  {wallet.transactions.slice(0, 5).map((t) => (
+                    <li key={t.id} className="flex items-start justify-between gap-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <p className="text-ink">{t.reason}</p>
+                        <p className="text-xs text-ink/50">{formatDateTime(t.createdAt)}</p>
+                      </div>
+                      <span className={`font-semibold shrink-0 ${t.type === "credit" || t.type === "release" ? "text-success" : "text-ink"}`}>
+                        {t.type === "credit" || t.type === "release" ? "+" : "−"}
+                        {formatRupees(t.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <div className="bg-white rounded border border-hairline p-5">
             <div className="flex items-center justify-between mb-4">

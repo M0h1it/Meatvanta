@@ -5,7 +5,7 @@ async function list(req, res, next) {
   try {
     const unreadOnly = req.query.unreadOnly === "true";
     const limit = req.query.limit ? Number(req.query.limit) : 20;
-    const notifications = await notificationsService.listNotifications({ unreadOnly, limit });
+    const notifications = await notificationsService.listNotifications({ unreadOnly, limit, admin: req.admin });
     return success(res, 200, "Notifications fetched.", { notifications });
   } catch (err) {
     return next(err);
@@ -14,7 +14,7 @@ async function list(req, res, next) {
 
 async function unreadCount(req, res, next) {
   try {
-    const count = await notificationsService.getUnreadCount();
+    const count = await notificationsService.getUnreadCount(req.admin);
     return success(res, 200, "Unread count fetched.", { count });
   } catch (err) {
     return next(err);
@@ -23,7 +23,7 @@ async function unreadCount(req, res, next) {
 
 async function markRead(req, res, next) {
   try {
-    const notification = await notificationsService.markAsRead(Number(req.params.id));
+    const notification = await notificationsService.markAsRead(Number(req.params.id), req.admin);
     return success(res, 200, "Notification marked as read.", { notification });
   } catch (err) {
     if (err.expose) return failure(res, err.statusCode, err.message);
@@ -33,7 +33,7 @@ async function markRead(req, res, next) {
 
 async function markAllRead(req, res, next) {
   try {
-    const result = await notificationsService.markAllAsRead();
+    const result = await notificationsService.markAllAsRead(req.admin);
     return success(res, 200, "All notifications marked as read.", result);
   } catch (err) {
     return next(err);
@@ -51,7 +51,7 @@ async function pendingOrders(req, res, next) {
 
 async function acknowledgeOrder(req, res, next) {
   try {
-    const notification = await notificationsService.acknowledgeOrderAlert(Number(req.params.id));
+    const notification = await notificationsService.acknowledgeOrderAlert(Number(req.params.id), req.admin);
     return success(res, 200, "Order alert acknowledged.", { notification });
   } catch (err) {
     if (err.expose) return failure(res, err.statusCode, err.message);

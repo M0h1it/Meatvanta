@@ -1,14 +1,15 @@
 const prisma = require("../../config/db");
+const { roleArrayHasPermission } = require("../../utils/permission.util");
 
 /**
  * Fire-and-forget - a notification failure must never break the action that
  * triggered it (an order is far more important than its alert). Same
  * defensive pattern as the audit logger.
  */
-async function createNotification({ type, title, message, entityType = null, entityId = null }) {
+async function createNotification({ type, title, message, entityType = null, entityId = null, adminUserId = null }) {
   try {
     return await prisma.notification.create({
-      data: { type, title, message, entityType, entityId },
+      data: { type, title, message, entityType, entityId, adminUserId },
     });
   } catch (err) {
     console.error("[notifications] failed to create notification:", err.message);
@@ -16,21 +17,37 @@ async function createNotification({ type, title, message, entityType = null, ent
   }
 }
 
-async function listNotifications({ unreadOnly = false, limit = 20 } = {}) {
+/**
+ * Which notifications this admin may see.
+ *  - shop-wide alerts (adminUserId null): only admins who can view orders
+ *  - alerts addressed to them: always
+ * So a delivery rider (no orders:view) sees only their own alerts, never the
+ * shop's customer/order alerts. Called without an admin = unrestricted.
+ */
+function visibleTo(admin) {
+  if (!admin) return {};
+  const mine = { adminUserId: admin.id };
+  if (roleArrayHasPermission(admin.permissions, "orders:view")) {
+    return { OR: [{ adminUserId: null }, mine] };
+  }
+  return mine;
+}
+
+async function listNotifications({ unreadOnly = false, limit = 20, admin = null } = {}) {
   return prisma.notification.findMany({
-    where: unreadOnly ? { isRead: false } : {},
+    where: { AND: [visibleTo(admin), unreadOnly ? { isRead: false } : {}] },
     orderBy: { createdAt: "desc" },
     take: limit,
   });
 }
 
 /** The cheap endpoint the bell badge polls - a count, not a payload. */
-async function getUnreadCount() {
-  return prisma.notification.count({ where: { isRead: false } });
+async function getUnreadCount(admin = null) {
+  return prisma.notification.count({ where: { AND: [visibleTo(admin), { isRead: false }] } });
 }
 
-async function markAsRead(id) {
-  const existing = await prisma.notification.findUnique({ where: { id } });
+async function markAsRead(id, admin = null) {
+  const existing = await prisma.notification.findFirst({ where: { AND: [{ id }, visibleTo(admin)] } });
   if (!existing) {
     const err = new Error("Notification not found.");
     err.statusCode = 404;
@@ -43,9 +60,9 @@ async function markAsRead(id) {
   });
 }
 
-async function markAllAsRead() {
+async function markAllAsRead(admin = null) {
   const result = await prisma.notification.updateMany({
-    where: { isRead: false },
+    where: { AND: [visibleTo(admin), { isRead: false }] },
     data: { isRead: true, readAt: new Date() },
   });
   return { markedCount: result.count };
@@ -63,6 +80,7 @@ async function listPendingOrderAlerts({ limit = 20 } = {}) {
   const alerts = await prisma.notification.findMany({
     where: {
       type: "new_order",
+      adminUserId: null,
       isRead: false,
       entityType: "Order",
       entityId: { not: null },
@@ -122,11 +140,11 @@ async function listPendingOrderAlerts({ limit = 20 } = {}) {
  * The admin pressed OK on an order popup: mark that alert read, plus the
  * "payment received" alert of the same order (Razorpay creates both).
  */
-async function acknowledgeOrderAlert(id) {
-  const alert = await markAsRead(id);
+async function acknowledgeOrderAlert(id, admin = null) {
+  const alert = await markAsRead(id, admin);
   if (alert.entityId) {
     await prisma.notification.updateMany({
-      where: { entityType: "Order", entityId: alert.entityId, isRead: false },
+      where: { entityType: "Order", entityId: alert.entityId, adminUserId: null, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
   }

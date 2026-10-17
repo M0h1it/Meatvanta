@@ -2,9 +2,14 @@ import apiClient from "../../../lib/apiClient";
 
 /**
  * Live banners grouped by placement ({ home_top: [...], announcement: [...] })
- * plus each spot's shape ({ home_top: { desktopRatio, mobileRatio, fullWidth } }).
+ * plus each spot's shape ({ home_top: { desktopRatio, mobileRatio, fullWidth } })
+ * and `nextChangeAt` - the moment a banner ends or a scheduled one starts (null if none).
  */
 export async function fetchLiveBanners() {
   const { data } = await apiClient.get("/banners");
-  return { banners: data.data.banners || {}, layouts: data.data.layouts || {} };
+  return {
+    banners: data.data.banners || {},
+    layouts: data.data.layouts || {},
+    nextChangeAt: data.data.nextChangeAt || null,
+  };
 }

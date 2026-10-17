@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchAvailableCoupons } from "../api/couponsApi";
 import { formatRupees } from "../../../lib/format";
+import { useLiveItems } from "../../../hooks/useLiveItems";
 
 /**
  * Coupon entry + the shop's "Available offers". Pass the object returned by
@@ -9,7 +10,8 @@ import { formatRupees } from "../../../lib/format";
 export default function CouponBox({ coupon, showOffers = true }) {
   const { couponCode, preview, isChecking, error, apply, remove } = coupon;
   const [input, setInput] = useState("");
-  const [offers, setOffers] = useState([]);
+  const [fetchedOffers, setOffers] = useState([]);
+  const offers = useLiveItems(fetchedOffers); // an offer disappears the moment it ends
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {

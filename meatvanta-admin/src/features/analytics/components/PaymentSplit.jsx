@@ -2,7 +2,7 @@ import { CHART } from "../lib/chartTheme";
 import { formatINR, formatNumber } from "../lib/analyticsFormat";
 
 // Fixed colour per payment method, so a method keeps its colour whatever the range.
-const METHOD_COLORS = { cod: CHART.primary, razorpay: CHART.secondary, upi: CHART.muted };
+const METHOD_COLORS = { cod: CHART.primary, razorpay: CHART.secondary, upi: CHART.muted, wallet: CHART.muted };
 
 /** Share of delivered sales by payment method: one proportion bar plus labelled rows. */
 export default function PaymentSplit({ paymentSplit }) {

@@ -34,7 +34,8 @@
       "orders:create",
       "orders:view",
       "orders:updateStatus",
-      "orders:cancel"
+      "orders:cancel",
+      "orders:adjustItems"
     ],
     "coupons": [
       "coupons:create",
@@ -75,6 +76,12 @@
     "shop_info": [
       "shop_info:view",
       "shop_info:update"
+    ],
+    "delivery": [
+      "delivery:view",
+      "delivery:updateStatus",
+      "delivery:assign",
+      "delivery:settle"
     ]
   }
 }

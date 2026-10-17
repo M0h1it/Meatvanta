@@ -1,3 +1,4 @@
+import { pickRider } from "../../delivery/lib/pickRider";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -8,7 +9,7 @@ import {
   cancelOrder,
   verifyPayment,
   setDeliveryCharge,
-  assignDeliveryPerson,
+  assignRider,
 } from "../api/ordersApi";
 import { fetchProducts } from "../../products/api/productsApi";
 import { usePermission } from "../../../hooks/usePermission";
@@ -97,6 +98,7 @@ export default function OrdersPage() {
   const { hasPermission } = usePermission();
   const canCreate = hasPermission("orders:create");
   const canUpdateStatus = hasPermission("orders:updateStatus");
+  const canAssignRider = canUpdateStatus || hasPermission("delivery:assign");
   const canCancel = hasPermission("orders:cancel");
 
   async function loadOrders(currentPage, currentStatus, currentSearch = debouncedSearch) {
@@ -262,10 +264,13 @@ export default function OrdersPage() {
   }
 
   async function handleAssignDeliveryPerson(order) {
-    const input = prompt(`Who is delivering ${order.orderNumber}?`, order.deliveryPersonName || "");
-    if (input === null) return;
+    const { chosen, riderId } = await pickRider({
+      title: `Who is delivering ${order.orderNumber}?`,
+      currentRiderId: order.deliveryAdminId,
+    });
+    if (!chosen) return;
     try {
-      await assignDeliveryPerson(order.id, input);
+      await assignRider(order.id, riderId);
       loadOrders(page, statusFilter);
       showSuccess("Delivery person updated.");
     } catch (err) {
@@ -587,6 +592,16 @@ export default function OrdersPage() {
                           {order.deliveryPersonName}
                         </span>
                       )}
+                      {order.dueBy && !["delivered", "cancelled"].includes(order.status) && (
+                        <span
+                          className={`flex items-center gap-1 ${
+                            new Date(order.dueBy).getTime() < Date.now() ? "text-error font-semibold" : ""
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-sm">schedule</span>
+                          Due {new Date(order.dueBy).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -675,7 +690,7 @@ export default function OrdersPage() {
                         </button>
                       )}
 
-                      {canUpdateStatus && !["delivered", "cancelled"].includes(order.status) && (
+                      {canAssignRider && !["delivered", "cancelled"].includes(order.status) && (
                         <button
                           onClick={() => handleAssignDeliveryPerson(order)}
                           className="text-xs px-3 py-1.5 rounded border border-outline-variant text-on-surface hover:bg-surface-container-low"

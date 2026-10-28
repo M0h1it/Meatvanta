@@ -1,6 +1,7 @@
 require("dotenv").config();
 const app = require("./app");
 const walletService = require("./services/wallet/wallet.service");
+const orderAlerts = require("./services/push/orderAlerts.service");
 
 const PORT = process.env.PORT || 4000;
 
@@ -16,3 +17,6 @@ const sweep = () =>
   walletService.releaseExpiredHolds().catch((err) => console.error("[wallet] hold sweep failed:", err.message));
 setTimeout(sweep, 30 * 1000).unref();
 setInterval(sweep, HOLD_SWEEP_MS).unref();
+
+// Order-alert app: ring again every 2 minutes for up to 15 minutes while nobody taps "Seen it".
+orderAlerts.startReRingJob();

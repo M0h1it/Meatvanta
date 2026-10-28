@@ -13,6 +13,21 @@ const loginRateLimiter = rateLimit({
   },
 });
 
+// The order-alert app signs in with the same admin passwords, so it gets the same limit - but its
+// own counter, so staff logging in to the admin panel and the app from the same shop WiFi do not
+// lock each other out.
+const appLoginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many login attempts. Please try again in a few minutes.",
+    errors: null,
+  },
+});
+
 // Coupon checks: generous for real shoppers, but stops scripts guessing codes.
 const couponRateLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -39,4 +54,4 @@ const previewRateLimiter = rateLimit({
   },
 });
 
-module.exports = { loginRateLimiter, couponRateLimiter, previewRateLimiter };
+module.exports = { loginRateLimiter, appLoginRateLimiter, couponRateLimiter, previewRateLimiter };

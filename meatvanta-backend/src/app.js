@@ -5,6 +5,7 @@ const morgan = require("morgan");
 
 const adminRoutes = require("./routes/index");
 const publicRoutes = require("./routes/public/public.routes");
+const appRoutes = require("./routes/app/app.routes");
 const seoRoutes = require("./routes/seo/seo.routes");
 const { errorHandler } = require("./middlewares/errorHandler.middleware");
 const { UPLOADS_DIR } = require("./utils/localImageStorage.util");
@@ -66,6 +67,7 @@ app.get("/health", (req, res) => res.json({ ok: true, time: new Date().toISOStri
 
 app.use("/api/admin", adminRoutes);
 app.use("/api/public", publicRoutes); // no auth - customer site reads from here
+app.use("/api/app", appRoutes); // Android order-alert app - its own bearer-token login
 
 // SEO helpers used by Nginx: per-page HTML with title/meta/JSON-LD + crawlable text,
 // the live sitemap.xml and llms.txt. Read-only, never touches customer data.

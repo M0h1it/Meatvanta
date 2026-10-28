@@ -56,9 +56,34 @@ model AdminUser {
   // Orders this admin (a delivery rider) is assigned to deliver.
   deliveries    Order[] @relation("OrderDelivery")
   passwordResets AdminPasswordReset[]
+  // Phones that are signed in to the Android order-alert app with this account.
+  appDevices     AppDevice[]
+  // Orders this admin marked "seen" from the app (stops the siren).
+  acknowledgedOrders Order[] @relation("OrderAcknowledgedBy")
 
   @@index([roleId])
   @@map("admin_users")
+}
+
+// A phone signed in to the Meat Vanta Orders app (Android order-alert app).
+// The app has its OWN bearer token, separate from the admin cookie and the customer
+// cookies. Only the sha256 of the token is stored, so a leaked database cannot be used
+// to sign in. One admin can have several phones; each has its own row.
+model AppDevice {
+  id          Int       @id @default(autoincrement())
+  adminUserId Int       @map("admin_user_id")
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique @map("token_hash") @db.VarChar(64)
+  // Firebase push address of this phone. Cleared when Firebase says it is no longer valid,
+  // when the user logs out, and when the same token turns up on another row.
+  fcmToken    String?   @map("fcm_token") @db.VarChar(512)
+  deviceName  String?   @map("device_name") @db.VarChar(120)
+  lastSeenAt  DateTime? @map("last_seen_at")
+  revokedAt   DateTime? @map("revoked_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([adminUserId])
+  @@map("app_devices")
 }
 
 model AuditLog {
@@ -337,11 +362,20 @@ model Order {
   // updated_at for orders delivered before this column existed.
   deliveredAt       DateTime?   @map("delivered_at")
 
+  // Order-alert app: the first person to tap "Seen it" stops the siren on every phone.
+  // Orders that were never alerted (older orders, staff-entered phone orders) stay null.
+  acknowledgedAt    DateTime?   @map("acknowledged_at")
+  acknowledgedById  Int?        @map("acknowledged_by_id")
+  acknowledgedBy    AdminUser?  @relation("OrderAcknowledgedBy", fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  // When the siren push was last sent - drives the "ring again every 2 minutes" job.
+  lastAlertSentAt   DateTime?   @map("last_alert_sent_at")
+
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
 
   items             OrderItem[]
 
+  @@index([acknowledgedById])
   @@index([status])
   @@index([createdAt])
   @@index([deliveredAt])

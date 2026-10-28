@@ -4,10 +4,12 @@ const { signAdminToken } = require("../../utils/jwt.util");
 const { writeAuditLog } = require("../../utils/auditLogger.util");
 
 /**
- * Returns { admin, token } on success, or throws an Error with .statusCode + .expose
- * set so the error handler / controller can return a safe message.
+ * Checks an email + password and returns the admin (with their role), or throws a 401 with
+ * .expose set. Shared by the admin panel login and the order-alert app login, so the password
+ * rules (generic error, inactive accounts, failed-login audit) exist in one place.
+ * Does NOT sign a token or record a successful login - the caller does that.
  */
-async function loginAdmin({ email, password, ipAddress }) {
+async function verifyAdminCredentials({ email, password, ipAddress }) {
   const admin = await prisma.adminUser.findUnique({
     where: { email },
     include: { role: true },
@@ -37,6 +39,16 @@ async function loginAdmin({ email, password, ipAddress }) {
     });
     throw invalidCredentialsError();
   }
+
+  return admin;
+}
+
+/**
+ * Returns { admin, token } on success, or throws an Error with .statusCode + .expose
+ * set so the error handler / controller can return a safe message.
+ */
+async function loginAdmin({ email, password, ipAddress }) {
+  const admin = await verifyAdminCredentials({ email, password, ipAddress });
 
   // Payload stays minimal - role/permissions are never trusted from the token,
   // requireAuth re-fetches them from the DB on every request.
@@ -86,4 +98,4 @@ async function updatePreferences(adminId, partialPreferences) {
   return updated.preferences;
 }
 
-module.exports = { loginAdmin, updatePreferences };
+module.exports = { loginAdmin, verifyAdminCredentials, updatePreferences };

@@ -8,6 +8,7 @@ const couponsService = require("../coupons/coupons.service");
 const combosService = require("../combos/combos.service");
 const newCustomerOffer = require("../newCustomerOffer/newCustomerOffer.service");
 const wallet = require("../wallet/wallet.service");
+const orderAlerts = require("../push/orderAlerts.service");
 
 function notFoundError(message) {
   const err = new Error(message);
@@ -493,6 +494,10 @@ async function notifyNewOrder(order) {
     entityType: "Order",
     entityId: order.id,
   });
+
+  // The siren on the order-alert app phones. Not awaited on purpose: a slow or failing push
+  // must never slow down or fail the order (it catches and logs its own errors).
+  orderAlerts.notifyNewOrder(order);
 }
 
 /** A map pin is either both numbers in range, or nothing - never half a pin. */

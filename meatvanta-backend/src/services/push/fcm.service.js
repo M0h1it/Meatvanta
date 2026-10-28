@@ -29,12 +29,12 @@ function getMessaging() {
     return null;
   }
   try {
-    const admin = require("firebase-admin");
+    // firebase-admin v12+ is modular: `admin.credential` / `admin.messaging()` no longer exist.
+    const { initializeApp, getApps, cert } = require("firebase-admin/app");
+    const { getMessaging: firebaseMessaging } = require("firebase-admin/messaging");
     const serviceAccount = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (!admin.apps.length) {
-      admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-    }
-    messaging = admin.messaging();
+    const app = getApps().length ? getApps()[0] : initializeApp({ credential: cert(serviceAccount) });
+    messaging = firebaseMessaging(app);
     return messaging;
   } catch (err) {
     warnOnce(`could not start Firebase (${err.message})`);

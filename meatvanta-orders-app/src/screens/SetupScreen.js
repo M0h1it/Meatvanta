@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AppState, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { showOrderAlarm } from '../notifications/alarm';
 import { TEST_ORDER_ID } from '../notifications/handlers';
 import { isPushAvailable } from '../notifications/fcm';
+import { canUseFullScreen, openFullScreenSettings } from '../native/fullScreenPermission';
 import { colors } from '../theme';
 
 /**
@@ -35,6 +36,7 @@ export default function SetupScreen({ navigation }) {
   const [notifOk, setNotifOk] = useState(null);
   const [batteryRestricted, setBatteryRestricted] = useState(null);
   const [power, setPower] = useState(null);
+  const [fullScreenOk, setFullScreenOk] = useState(null);
 
   const check = useCallback(async () => {
     try {
@@ -43,6 +45,7 @@ export default function SetupScreen({ navigation }) {
     } catch {
       setNotifOk(null);
     }
+    setFullScreenOk(await canUseFullScreen());
     try {
       setBatteryRestricted(await notifee.isBatteryOptimizationEnabled());
     } catch {
@@ -60,14 +63,6 @@ export default function SetupScreen({ navigation }) {
     const sub = AppState.addEventListener('change', (s) => s === 'active' && check());
     return () => sub.remove();
   }, [check]);
-
-  async function openFullScreenSettings() {
-    try {
-      await Linking.sendIntent('android.settings.MANAGE_APP_USE_FULL_SCREEN_INTENT');
-    } catch {
-      Linking.openSettings();
-    }
-  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -91,9 +86,15 @@ export default function SetupScreen({ navigation }) {
 
         <Row
           title="Full-screen alerts (Android 14+)"
-          state="warn"
-          detail="Lets the siren open over the lock screen. On Android 14 or newer, switch it ON for this app. The phone cannot tell us its state, so please check."
-          buttonText="Open settings"
+          state={fullScreenOk === null ? 'warn' : fullScreenOk ? 'ok' : 'bad'}
+          detail={
+            fullScreenOk === null
+              ? 'Lets the siren open over the lock screen. This phone could not tell us its state, so please check it in settings.'
+              : fullScreenOk
+                ? 'Allowed.'
+                : 'Not allowed. Without this the siren will not open over the lock screen. Switch it ON for this app.'
+          }
+          buttonText={fullScreenOk ? null : 'Open settings'}
           onPress={openFullScreenSettings}
         />
 
